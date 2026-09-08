@@ -7,7 +7,7 @@ window.PSY_CONFIG = {
   /* Адрес приёмника результатов: веб-приложение Google Apps Script.
      Как его получить — пошагово написано в начале файла
      google-apps-script.gs. Должен оканчиваться на /exec           */
-  gasUrl: 'https://script.google.com/macros/s/ВАШ_ID/exec',
+  gasUrl: 'https://script.google.com/macros/s/AKfycbwkZ1WyVdmVPTx7vuZKEHkVvgLb3MpvQoZwyb5_Oze7PJv2gFvIoKts3F48RGd6tQZu/exec',
 
   /* Спрашивать ли школу отдельным полем на стартовом экране */
   askSchool: false,
