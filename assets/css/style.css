@@ -108,14 +108,15 @@ input:focus {
   color: var(--muted);
   margin-bottom: 8px;
 }
-.chips { display: flex; flex-wrap: wrap; gap: 8px; }
-/* цифры переносятся на вторую строку, поэтому ряд букв нужно явно
-   отделить — иначе «10 11» и «А Б В» читаются как один набор */
-.chips + .chips { margin-top: 16px; }
+/* Сетка, а не свободный перенос: шесть цифр и шесть букв встают ровно
+   в две строки одинаковой ширины. При переносе по содержимому на второй
+   строке оставался одинокий элемент, и группы читались вперемешку. */
+.chips { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.chips + .chips { margin-top: 10px; }
 .chip {
   appearance: none;
-  min-width: 46px;
-  padding: 11px 14px;
+  min-width: 0;                  /* ширину задаёт сетка */
+  padding: 12px 6px;
   font: 600 15px/1 inherit;
   font-family: inherit;
   color: var(--ink);

@@ -53,8 +53,8 @@
       '<p class="instr">' + T.instruction + '</p>' +
       '<p class="meta">Вопросов: ' + T.questions.length + ' · займёт около 7–10 минут</p>' +
       '<form id="startForm" novalidate>' +
-        '<label>Фамилия и имя <span class="req">*</span>' +
-          '<input name="fio" autocomplete="name" required placeholder="Иванов Иван">' +
+        '<label>Имя и фамилия <span class="req">*</span>' +
+          '<input name="fio" autocomplete="name" required placeholder="Имя Фамилия">' +
         '</label>' +
         '<div class="field">' +
           '<span class="lab">Класс <span class="req">*</span></span>' +
@@ -85,13 +85,12 @@
       });
     }
 
-    var grades = T.grades || [5, 6, 7, 8, 9, 10, 11];
-    var letters = T.letters || ['А', 'Б', 'В', 'Г', 'Д'];
+    // наборы задаются в data.js — у другой методики они могут быть иными
+    var grades = T.grades || [6, 7, 8, 9, 10, 11];
+    var letters = T.letters || ['А', 'Б', 'В', 'Г', 'Д', 'Е'];
 
     chipRow($('#grades', wrap), grades, grades, function (v) { picked.grade = v; });
-    // пустая строка — класс без буквы: в малокомплектной школе он один на параллель
-    chipRow($('#letters', wrap), letters.concat(['']), letters.concat(['без буквы']),
-            function (v) { picked.letter = v; });
+    chipRow($('#letters', wrap), letters, letters, function (v) { picked.letter = v; });
 
     $('#startForm', wrap).addEventListener('submit', function (e) {
       e.preventDefault();
@@ -101,10 +100,10 @@
       function fail(msg) { err.textContent = msg; err.hidden = false; }
 
       if (fio.length < 3 || fio.indexOf(' ') === -1) {
-        return fail('Напиши фамилию и имя полностью.');
+        return fail('Напиши имя и фамилию полностью.');
       }
       if (picked.grade === null) return fail('Выбери цифру класса.');
-      if (picked.letter === null) return fail('Выбери букву класса или «без буквы».');
+      if (picked.letter === null) return fail('Выбери букву класса.');
 
       state.student = {
         fio: fio,
