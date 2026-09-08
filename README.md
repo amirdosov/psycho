@@ -96,31 +96,32 @@ gasUrl: 'https://script.google.com/macros/s/ВАШ_ID/exec',
 
 ---
 
-## 3. Публикация на GitHub Pages
+## 3. Публикация
 
-```bash
-git init
-git add .
-git commit -m "Психодиагностические методики"
-git branch -M main
-git remote add origin https://github.com/ВАШ_ЛОГИН/ВАШ_РЕПОЗИТОРИЙ.git
-git push -u origin main
+Сайт уже развёрнут: **https://amirdosov.github.io/psycho/**
+
+Прямая ссылка на анкету — её и давайте ученикам (удобно превратить в QR-код
+и показать классу с проектора):
+
+```
+https://amirdosov.github.io/psycho/tests/motivaciya-lukyanova/
 ```
 
-Затем в репозитории: **Settings → Pages → Source: Deploy from a branch →
-Branch `main`, папка `/ (root)` → Save.**
+Чтобы выложить изменения:
 
-Через минуту сайт будет доступен по адресу
-`https://ВАШ_ЛОГИН.github.io/ВАШ_РЕПОЗИТОРИЙ/`.
+```bash
+git add -A
+git commit -m "что изменилось"
+git push
+```
 
-Ссылку на конкретную анкету можно давать напрямую:
-`…/tests/motivaciya-lukyanova/` — удобно превратить в QR-код и показать
-классу с проектора.
+Через минуту-две правки будут на сайте. Настройки Pages: ветка `main`,
+папка `/ (root)`.
 
 > Файл `.nojekyll` в корне нужен, чтобы GitHub Pages отдавал сайт как есть.
 > Не удаляйте его.
 
-Локальная проверка: `python -m http.server 8765`, затем
+Локальная проверка перед публикацией: `python -m http.server 8765`, затем
 <http://localhost:8765>.
 
 ---
