@@ -207,8 +207,12 @@ function validate(K, d) {
   var fio = String(d.fio || '').trim();
   if (fio.length < 3 || fio.length > 80) throw new Error('некорректное ФИО');
 
-  var klass = String(d.klass || '').trim();
-  if (!klass || klass.length > 20) throw new Error('некорректный класс');
+  // Класс приходит из кнопок и уже имеет вид «7Б». Приводим к нему и то,
+  // что могло прийти иначе, — иначе в таблице заводятся «7 б» и «7Б»
+  // как разные значения, и фильтр по классам перестаёт работать.
+  var klass = String(d.klass || '').replace(/\s+/g, '').toUpperCase();
+  if (!klass || klass.length > 6) throw new Error('некорректный класс');
+  d.klass = klass;
 
   if (!d.answers || d.answers.length !== need) {
     throw new Error('ожидается ответов: ' + need);

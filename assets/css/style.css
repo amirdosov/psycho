@@ -99,6 +99,41 @@ input:focus {
   box-shadow: 0 0 0 3px var(--accent-sl);
 }
 
+/* --------------------------------------- выбор класса кнопками */
+.field { margin: 0 0 18px; }
+.field .lab {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+/* цифры переносятся на вторую строку, поэтому ряд букв нужно явно
+   отделить — иначе «10 11» и «А Б В» читаются как один набор */
+.chips + .chips { margin-top: 16px; }
+.chip {
+  appearance: none;
+  min-width: 46px;
+  padding: 11px 14px;
+  font: 600 15px/1 inherit;
+  font-family: inherit;
+  color: var(--ink);
+  background: var(--card);
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color .15s, background .15s;
+}
+.chip.on {
+  border-color: var(--accent);
+  background: var(--accent-sl);
+  color: var(--accent);
+}
+.chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (hover: hover) { .chip:hover { border-color: var(--accent); } }
+
 /* ------------------------------------------------------------ кнопки */
 .btn {
   appearance: none;

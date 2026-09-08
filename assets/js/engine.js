@@ -44,6 +44,8 @@
   /* ====================================================== ЭКРАН 1: старт */
   function renderIntro(root) {
     var wrap = el('section', 'card');
+    var picked = { grade: null, letter: null };
+
     wrap.innerHTML =
       '<h1>' + esc(T.title) + '</h1>' +
       '<p class="sub">' + esc(T.author) + ' · ' + esc(T.audience) + '</p>' +
@@ -54,31 +56,59 @@
         '<label>Фамилия и имя <span class="req">*</span>' +
           '<input name="fio" autocomplete="name" required placeholder="Иванов Иван">' +
         '</label>' +
-        '<label>Класс <span class="req">*</span>' +
-          '<input name="klass" required placeholder="7 Б">' +
-        '</label>' +
+        '<div class="field">' +
+          '<span class="lab">Класс <span class="req">*</span></span>' +
+          '<div class="chips" id="grades"></div>' +
+          '<div class="chips" id="letters"></div>' +
+        '</div>' +
         (CFG.askSchool ? '<label>Школа<input name="school" placeholder="МБОУ СОШ №1"></label>' : '') +
         '<p class="err" id="startErr" hidden></p>' +
         '<button class="btn primary" type="submit">Начать</button>' +
       '</form>';
 
+    /* Ряд кнопок с единственным выбором */
+    function chipRow(box, values, labels, onPick) {
+      values.forEach(function (v, i) {
+        var b = el('button', 'chip', esc(labels[i]));
+        b.type = 'button';
+        b.setAttribute('aria-pressed', 'false');
+        b.addEventListener('click', function () {
+          Array.prototype.forEach.call(box.children, function (c) {
+            c.classList.remove('on');
+            c.setAttribute('aria-pressed', 'false');
+          });
+          b.classList.add('on');
+          b.setAttribute('aria-pressed', 'true');
+          onPick(v);
+        });
+        box.appendChild(b);
+      });
+    }
+
+    var grades = T.grades || [5, 6, 7, 8, 9, 10, 11];
+    var letters = T.letters || ['А', 'Б', 'В', 'Г', 'Д'];
+
+    chipRow($('#grades', wrap), grades, grades, function (v) { picked.grade = v; });
+    // пустая строка — класс без буквы: в малокомплектной школе он один на параллель
+    chipRow($('#letters', wrap), letters.concat(['']), letters.concat(['без буквы']),
+            function (v) { picked.letter = v; });
+
     $('#startForm', wrap).addEventListener('submit', function (e) {
       e.preventDefault();
       var fio = this.fio.value.trim().replace(/\s+/g, ' ');
-      var klass = this.klass.value.trim();
       var err = $('#startErr', wrap);
+
+      function fail(msg) { err.textContent = msg; err.hidden = false; }
+
       if (fio.length < 3 || fio.indexOf(' ') === -1) {
-        err.textContent = 'Напиши фамилию и имя полностью.';
-        err.hidden = false;
-        return;
+        return fail('Напиши фамилию и имя полностью.');
       }
-      if (!klass) {
-        err.textContent = 'Укажи класс.';
-        err.hidden = false;
-        return;
-      }
+      if (picked.grade === null) return fail('Выбери цифру класса.');
+      if (picked.letter === null) return fail('Выбери букву класса или «без буквы».');
+
       state.student = {
-        fio: fio, klass: klass,
+        fio: fio,
+        klass: String(picked.grade) + picked.letter,   // всегда вида «7Б» или «7»
         school: this.school ? this.school.value.trim() : ''
       };
       state.startedAt = Date.now();
