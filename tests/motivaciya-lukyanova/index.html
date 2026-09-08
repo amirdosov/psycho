@@ -2,11 +2,23 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- user-scalable=no убирает щипок и двойной тап: анкета должна вести себя
+     как экран приложения, а не как страница. Safari на iOS этот параметр
+     игнорирует, поэтому щипок там гасится ещё и из engine.js -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#3b6ef5">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Анкеты">
 <title>Методика изучения мотивации обучения — Лукьянова, Калинина</title>
-<link rel="stylesheet" href="../../assets/css/style.css">
+<link rel="manifest" href="../../manifest.webmanifest">
+<link rel="apple-touch-icon" href="../../assets/icons/apple-touch-icon.png">
+<link rel="icon" href="../../assets/icons/icon-192.png" type="image/png">
+<!-- ?v= обновляется при выпуске: GitHub Pages кеширует ассеты на 10 минут,
+     и без этого можно поймать новую страницу со старым скриптом -->
+<link rel="stylesheet" href="../../assets/css/style.css?v=4">
 </head>
 <body>
   <main class="wrap" id="app">
@@ -15,9 +27,9 @@
     </section>
   </main>
 
-  <script src="../../assets/js/config.js"></script>
-  <script src="data.js"></script>
-  <script src="../../assets/js/engine.js"></script>
+  <script src="../../assets/js/config.js?v=4"></script>
+  <script src="data.js?v=4"></script>
+  <script src="../../assets/js/engine.js?v=4"></script>
   <script>PSY_START('#app');</script>
 </body>
 </html>

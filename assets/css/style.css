@@ -37,7 +37,13 @@
 
 * { box-sizing: border-box; }
 
-html { -webkit-text-size-adjust: 100%; }
+html {
+  -webkit-text-size-adjust: 100%;
+  /* убирает задержку и масштабирование по двойному тапу */
+  touch-action: manipulation;
+  /* гасит оттяжку страницы и «потянуть, чтобы обновить» */
+  overscroll-behavior: none;
+}
 
 body {
   margin: 0;
@@ -46,7 +52,15 @@ body {
   color: var(--ink);
   font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
         "Helvetica Neue", Arial, sans-serif;
+  /* текст анкеты выделять незачем: долгое нажатие на вариант ответа
+     вызывало бы лупу и меню копирования вместо выбора */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
+
+/* поля ввода — исключение, там выделение нужно */
+input, textarea { -webkit-user-select: text; user-select: text; }
 
 .wrap { max-width: 720px; margin: 0 auto; }
 
@@ -254,6 +268,54 @@ input:focus {
 .tests .t-meta { color: var(--muted); font-size: 14px; }
 
 footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 22px; }
+
+/* ============================================ ПОДАЧА КАК У ПРИЛОЖЕНИЯ
+   На телефоне карточка разворачивается во весь экран, а кнопки «Назад»
+   и «Далее» закрепляются внизу: до них не нужно доскролливать, и рука
+   попадает по ним не глядя. На планшете и десктопе остаётся карточка.
+   ==================================================================== */
+@media (max-width: 619px) {
+  body { padding: 0; }
+  .wrap { max-width: none; }
+
+  .card {
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+    padding: 20px 16px 24px;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  /* место под закреплённую панель, чтобы последний вариант не уезжал под неё */
+  .card.quiz { padding-bottom: 96px; }
+
+  /* финальный экран короткий — на весь экран он смотрится лучше по центру,
+     полоса прогресса при этом остаётся сверху */
+  .card.center { display: flex; flex-direction: column; }
+  .card.center #stage {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding-bottom: 12vh;
+  }
+
+  .quiz .nav {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    margin: 0;
+    padding: 10px 16px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+    background: var(--card);
+    border-top: 1px solid var(--line);
+    box-shadow: 0 -4px 16px rgba(20, 30, 60, .07);
+    z-index: 20;
+  }
+  .quiz .nav .btn.ghost { flex: 0 0 34%; }
+
+  footer { padding: 0 16px 24px; }
+}
 
 /* ------------------------------------------------------------ планшет+ */
 @media (min-width: 620px) {

@@ -296,8 +296,20 @@
   }
 
   /* ====================================================== запуск */
+
+  /* Safari на iOS намеренно игнорирует user-scalable в мета-теге, поэтому
+     щипок гасим событиями жестов. Двойной тап убирает touch-action в CSS.
+     Оговорка: масштабирование — средство доступности, и мы его отбираем;
+     ради этого весь текст в анкете набран крупно и контрастно. */
+  function lockZoom() {
+    ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (ev) {
+      document.addEventListener(ev, function (e) { e.preventDefault(); }, { passive: false });
+    });
+  }
+
   window.PSY_START = function (rootSel) {
     var root = $(rootSel);
+    lockZoom();
     renderIntro(root);
     window.addEventListener('beforeunload', function (e) {
       if (state.startedAt && !state.sent) { e.preventDefault(); e.returnValue = ''; }
