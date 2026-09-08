@@ -356,29 +356,33 @@ function barH(pct, color, h) {
   return tbl(s);
 }
 
-/* Двусторонняя полоса для полярной шкалы, значение от -max до +max */
+/* Двусторонняя полоса для полярной шкалы: значение от -max до +max,
+   посередине риска нуля. Все секции — ячейки ОДНОЙ строки, без вложенных
+   таблиц: вложенность сдвигала риску на высоту полосы вверх, а соседние
+   ячейки стоят на одной линии по построению. */
 function barDiverging(value, max) {
-  var mag = Math.round(Math.abs(value) / max * 100);
-  var h = 15;
-  var left, right;
+  var h = 15, half = 49, tick = 2;      // проценты ширины: 49 + 2 + 49
+  var m = Math.round(half * Math.min(Math.abs(value), max) / max);
+  var s = '';
 
-  if (value < 0) {
-    left = tbl(cell(100 - mag, C.track, h) + cell(mag, C.neg, h));
-    right = tbl(cell(100, C.track, h));
-  } else if (value > 0) {
-    left = tbl(cell(100, C.track, h));
-    right = tbl(cell(mag, C.pos, h) + cell(100 - mag, C.track, h));
-  } else {
-    left = tbl(cell(100, C.track, h));
-    right = tbl(cell(100, C.track, h));
+  if (value < 0) {                      // заливка слева, вплотную к риске
+    if (half - m > 0) s += cell(half - m, C.track, h);
+    if (m > 0)        s += cell(m, C.neg, h);
+    s += cell(tick, C.ink, h);
+    s += cell(half, C.track, h);
+
+  } else if (value > 0) {               // заливка справа, вплотную к риске
+    s += cell(half, C.track, h);
+    s += cell(tick, C.ink, h);
+    if (m > 0)        s += cell(m, C.pos, h);
+    if (half - m > 0) s += cell(half - m, C.track, h);
+
+  } else {                              // ноль — только риска
+    s += cell(half, C.track, h);
+    s += cell(tick, C.ink, h);
+    s += cell(half, C.track, h);
   }
-
-  return '<table width="100%" cellpadding="0" cellspacing="0" border="0" ' +
-         'style="border-collapse:collapse;"><tr>' +
-         '<td width="49%">' + left + '</td>' +
-         cell(2, C.ink, h) +
-         '<td width="49%">' + right + '</td>' +
-         '</tr></table>';
+  return tbl(s);
 }
 
 /* Строка диаграммы: подпись слева, полоса, значение справа */
