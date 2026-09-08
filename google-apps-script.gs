@@ -31,6 +31,11 @@
 var EMAIL = 'ВАША_ПОЧТА@example.com';   // ← впишите сюда свой адрес
 var SHEET = 'Результаты';             // имя листа-журнала
 
+/* Предел писем в сутки: не даёт потоку выдуманных заявок съесть суточную
+   квоту Gmail (около 100 писем). Сверх предела заявки продолжают попадать
+   в таблицу, но письма не уходят — настоящие результаты не теряются. */
+var MAX_EMAILS_PER_DAY = 60;
+
 /* ============================================================== ПАЛИТРА */
 var C = {
   ink:    '#1a2233',
@@ -145,31 +150,102 @@ function doPost(e) {
     var d = JSON.parse(e.postData.contents);
     var K = KEYS[d.testId];
     if (!K) throw new Error('Неизвестная методика: ' + d.testId);
+    validate(K, d);
+
+    // Страница повторяет отправку при обрыве связи. Если первая попытка
+    // на самом деле дошла, а ответ потерялся, второй раз считать и слать
+    // письмо не нужно — но ученику отвечаем «принято», иначе он увидит
+    // ошибку там, где на самом деле всё в порядке.
+    if (isRepeat(d)) return json({ ok: true });
 
     var res = score(K, d.answers);
-    var pdf = makePdf(K, d, res);
 
-    MailApp.sendEmail({
-      to: EMAIL,
-      subject: 'Результат · ' + d.fio + ' · ' + d.klass + ' класс · уровень ' +
-               res.levels.total.level + ' (' + res.levels.total.name + ')',
-      htmlBody: emailHtml(K, d, res),
-      body: plainText(K, d, res),
-      attachments: [pdf],
-      name: 'Психодиагностика'
-    });
-
+    // Сначала журнал, потом почта: если письма упрутся в суточный предел,
+    // результат всё равно не пропадёт.
     logToSheet(K, d, res);
+
+    if (mailQuotaLeft()) {
+      MailApp.sendEmail({
+        to: EMAIL,
+        subject: 'Результат · ' + d.fio + ' · ' + d.klass + ' класс · уровень ' +
+                 res.levels.total.level + ' (' + res.levels.total.name + ')',
+        htmlBody: emailHtml(K, d, res),
+        body: plainText(K, d, res),
+        attachments: [makePdf(K, d, res)],
+        name: 'Психодиагностика'
+      });
+    }
     return json({ ok: true });
 
   } catch (err) {
     // письмо об ошибке, чтобы сбой не остался незамеченным
     try {
-      MailApp.sendEmail(EMAIL, 'Ошибка приёма результата',
-        String(err) + '\n\n' + (e && e.postData ? e.postData.contents : ''));
+      if (mailQuotaLeft()) {
+        MailApp.sendEmail(EMAIL, 'Ошибка приёма результата',
+          String(err) + '\n\n' + (e && e.postData ? e.postData.contents : ''));
+      }
     } catch (ignored) {}
     return json({ ok: false, error: String(err) });
   }
+}
+
+/* ====================================================== ЗАЩИТА ОТ МУСОРА
+   Адрес приёмника виден в коде страницы — иначе браузер ученика не смог бы
+   к нему обратиться. Значит слать выдуманные заявки может кто угодно,
+   и пароль в коде сайта тут не помог бы: он лежал бы там же, рядом.
+   Данные это не открывает (наружу отдаётся только «принято»), опасность
+   одна — засорение почты и журнала. Ниже три недорогих ограничителя.
+   ====================================================================== */
+
+/* Заявка должна быть похожа на настоящую: столько ответов, сколько вопросов
+   в методике, в каждом ровно два выбранных варианта, осмысленные ФИО
+   и класс. Мусор отсекается до того, как будет отправлено письмо. */
+function validate(K, d) {
+  var need = 0;
+  for (var b in K.blocks) need += K.blocks[b].qs.length;
+
+  var fio = String(d.fio || '').trim();
+  if (fio.length < 3 || fio.length > 80) throw new Error('некорректное ФИО');
+
+  var klass = String(d.klass || '').trim();
+  if (!klass || klass.length > 20) throw new Error('некорректный класс');
+
+  if (!d.answers || d.answers.length !== need) {
+    throw new Error('ожидается ответов: ' + need);
+  }
+  for (var i = 0; i < d.answers.length; i++) {
+    var a = d.answers[i];
+    if (!a || !a.picks || a.picks.length !== 2) {
+      throw new Error('в вопросе ' + (a && a.n) + ' должно быть два варианта');
+    }
+  }
+}
+
+/* Та же анкета от того же ученика в пределах минуты считается повтором. */
+function isRepeat(d) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var key = Utilities.base64EncodeWebSafe(Utilities.computeDigest(
+      Utilities.DigestAlgorithm.MD5,
+      d.testId + '|' + d.fio + '|' + d.klass,
+      Utilities.Charset.UTF_8));
+    if (cache.get(key)) return true;
+    cache.put(key, '1', 60);
+  } catch (ignored) {}
+  return false;
+}
+
+/* Остался ли запас писем на сегодня. */
+function mailQuotaLeft() {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    var parts = String(props.getProperty('mailCount') || '').split('|');
+    var count = (parts[0] === today) ? (parseInt(parts[1], 10) || 0) : 0;
+    if (count >= MAX_EMAILS_PER_DAY) return false;
+    props.setProperty('mailCount', today + '|' + (count + 1));
+  } catch (ignored) {}
+  return true;
 }
 
 function doGet() {
@@ -249,16 +325,19 @@ function score(K, answers) {
 }
 
 /* ==================================================== ГРАФИКА НА ТАБЛИЦАХ
-   Конвертер HTML → PDF в Apps Script понимает только простую вёрстку:
-   таблицы, атрибуты bgcolor/width и базовые inline-стили. Поэтому все
-   диаграммы собраны из ячеек таблицы — так они одинаково выглядят
-   и в PDF, и в письме.
+   Диаграммы собраны из ячеек таблицы, а цвет полосы задаётся ГРАНИЦЕЙ
+   (border-top), а не фоном. Это не украшательство, а вынужденное решение:
+   конвертер HTML → PDF в Apps Script выбрасывает любую заливку фона —
+   и bgcolor, и background-color, и на ячейке, и на блоке, — а границы
+   рисует. Проверено на семи вариантах разметки; граница оказалась
+   единственным способом, который одинаково работает и в PDF, и в письме
+   (картинка из data-URI выглядит в PDF так же, но её блокирует Gmail).
+   Поэтому: фон в отчёте — только там, где он не несёт смысла.
    ====================================================================== */
 
 function cell(w, color, h) {
-  return '<td width="' + w + '%" bgcolor="' + color + '" ' +
-         'style="background-color:' + color + ';height:' + h + 'px;' +
-         'font-size:1px;line-height:' + h + 'px;">&nbsp;</td>';
+  return '<td width="' + w + '%" style="border-top:' + h + 'px solid ' + color +
+         ';font-size:1px;line-height:1px;">&nbsp;</td>';
 }
 
 function tbl(inner, extra) {
@@ -274,7 +353,7 @@ function barH(pct, color, h) {
   var s = '';
   if (pct > 0)   s += cell(pct, color, h);
   if (pct < 100) s += cell(100 - pct, C.track, h);
-  return tbl(s, 'border-radius:3px;');
+  return tbl(s);
 }
 
 /* Двусторонняя полоса для полярной шкалы, значение от -max до +max */
@@ -297,8 +376,7 @@ function barDiverging(value, max) {
   return '<table width="100%" cellpadding="0" cellspacing="0" border="0" ' +
          'style="border-collapse:collapse;"><tr>' +
          '<td width="49%">' + left + '</td>' +
-         '<td width="2%" bgcolor="' + C.ink + '" style="background-color:' + C.ink +
-             ';height:' + h + 'px;font-size:1px;">&nbsp;</td>' +
+         cell(2, C.ink, h) +
          '<td width="49%">' + right + '</td>' +
          '</tr></table>';
 }
@@ -394,10 +472,9 @@ function totalCard(K, res) {
   var lv = res.levels.total;
   var col = LEVEL_COLOR[lv.level];
   return '<table width="100%" cellpadding="0" cellspacing="0" border="0" ' +
-    'style="border-collapse:collapse;border:1px solid ' + C.line + ';border-radius:8px;">' +
+    'style="border-collapse:collapse;border:1px solid ' + C.line + ';">' +
     '<tr>' +
-      '<td width="6" bgcolor="' + col + '" style="background-color:' + col + ';">&nbsp;</td>' +
-      '<td style="padding:14px 16px;">' +
+      '<td style="padding:14px 16px;border-left:6px solid ' + col + ';">' +
         '<div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:' +
           C.muted + ';">ИТОГОВЫЙ УРОВЕНЬ МОТИВАЦИИ</div>' +
         '<div style="font-size:21px;font-weight:bold;color:' + col + ';padding-top:3px;">' +
@@ -425,7 +502,7 @@ function studentCard(d) {
         esc(v) + '</div></td>';
   }
   return '<table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="' + C.soft +
-    '" style="background-color:' + C.soft + ';border-radius:8px;"><tr>' +
+    '" style="background-color:' + C.soft + ';border:1px solid ' + C.line + ';"><tr>' +
     '<td style="padding:12px 16px;"><table cellpadding="0" cellspacing="0" border="0"><tr>' +
       item('УЧЕНИК', d.fio) +
       item('КЛАСС', d.klass) +
