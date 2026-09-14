@@ -525,27 +525,41 @@ function studentCard(d) {
     '</tr></table></td></tr></table>';
 }
 
-/* Таблица всех ответов — для перепроверки вручную */
-function answersTable(res) {
+/* Таблица ответов одной колонки — используется дважды бок о бок,
+   чтобы весь список из 18 вопросов помещался на один лист PDF. */
+function answersRows(rows) {
   var h = '<table width="100%" cellpadding="0" cellspacing="0" border="0" ' +
-    'style="border-collapse:collapse;font-size:11px;">';
-  res.rows.forEach(function (r) {
+    'style="border-collapse:collapse;font-size:9.5px;">';
+  rows.forEach(function (r) {
     h += '<tr>' +
-      '<td width="26" valign="top" style="padding:7px 0 7px 0;color:' + C.muted +
+      '<td width="16" valign="top" style="padding:5px 0 5px 0;color:' + C.muted +
         ';border-top:1px solid ' + C.line + ';">' + r.n + '.</td>' +
-      '<td valign="top" style="padding:7px 8px 7px 0;border-top:1px solid ' + C.line + ';">' +
+      '<td valign="top" style="padding:5px 6px 5px 0;border-top:1px solid ' + C.line + ';">' +
         '<div style="color:' + C.ink + ';font-weight:bold;">' + esc(r.stem) + '</div>';
     for (var i = 0; i < r.letters.length; i++) {
-      h += '<div style="color:' + C.muted + ';padding-top:2px;">' +
+      h += '<div style="color:' + C.muted + ';padding-top:1px;">' +
              r.letters[i] + ') ' + esc(r.texts[i]) +
              ' <span style="color:' + C.accent + ';">[' + r.values[i] + ']</span></div>';
     }
     h += '</td>' +
-      '<td width="34" valign="top" align="right" style="padding:7px 0;color:' + C.muted +
+      '<td width="20" valign="top" align="right" style="padding:5px 0;color:' + C.muted +
         ';border-top:1px solid ' + C.line + ';">' + r.block + '</td>' +
     '</tr>';
   });
   return h + '</table>';
+}
+
+/* Таблица всех ответов — для перепроверки вручную. Две колонки бок о бок
+   (первая половина вопросов слева, вторая справа), иначе список из 18
+   вопросов не помещается на одну страницу PDF. */
+function answersTable(res) {
+  var rows = res.rows;
+  var mid = Math.ceil(rows.length / 2);
+  return '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>' +
+    '<td width="49%" valign="top">' + answersRows(rows.slice(0, mid)) + '</td>' +
+    '<td width="2%">&nbsp;</td>' +
+    '<td width="49%" valign="top">' + answersRows(rows.slice(mid)) + '</td>' +
+  '</tr></table>';
 }
 
 /* --------------------------------------------------------- тело отчёта */
