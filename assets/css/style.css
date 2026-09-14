@@ -113,6 +113,25 @@ input:focus {
   box-shadow: 0 0 0 3px var(--accent-sl);
 }
 
+/* ------------------------------------------------ переключатель языка */
+.langswitch { display: flex; justify-content: flex-end; gap: 6px; margin: 0 0 14px; }
+.langswitch button {
+  appearance: none;
+  border: 1.5px solid var(--line);
+  background: var(--card);
+  color: var(--muted);
+  font: 700 12px/1 inherit;
+  font-family: inherit;
+  letter-spacing: .03em;
+  padding: 7px 12px;
+  border-radius: 99px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.langswitch button.on { border-color: var(--accent); background: var(--accent-sl); color: var(--accent); }
+.langswitch button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 /* --------------------------------------- выбор класса кнопками */
 .field { margin: 0 0 18px; }
 .field .lab {

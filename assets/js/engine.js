@@ -5,6 +5,14 @@
    Подсчёт баллов, интерпретация и оформление отчёта живут на сервере
    (google-apps-script.gs): в браузере ученика нет ни ключей методики,
    ни результата.
+
+   ЯЗЫК. Если в data.js методики есть T.i18n (объект { код: {...текст} }),
+   движок показывает переключатель языка и хранит выбор в localStorage —
+   так следующий ученик на этом же телефоне попадает сразу в свой язык.
+   Без T.i18n методика считается одноязычной, переключатель не показывается,
+   а весь текст читается прямо с T (как раньше). Порядок и число вариантов
+   в question.options должны совпадать между языками — сервер считает баллы
+   по позиции варианта, а не по его тексту.
    ========================================================================= */
 (function () {
   'use strict';
@@ -12,8 +20,55 @@
   var T   = window.PSY_TEST;
   var CFG = window.PSY_CONFIG || {};
   var LETTERS = 'абвгдежзиклмн'.split('');
+  var LANG_KEY = 'psy_lang';
+  var LANGS = T.i18n ? Object.keys(T.i18n) : null;
+  var LANG_LABEL = { kk: 'ҚАЗ', ru: 'РУС' };
+
+  var UI = {
+    ru: {
+      fioLabel: 'Имя и фамилия', fioPlaceholder: 'Имя Фамилия',
+      classLabel: 'Класс',
+      schoolLabel: 'Школа', schoolPlaceholder: 'МБОУ СОШ №1',
+      startBtn: 'Начать',
+      meta: function (n) { return 'Вопросов: ' + n + ' · займёт около 7–10 минут'; },
+      errFio: 'Напиши имя и фамилию полностью.',
+      errGrade: 'Выбери цифру класса.',
+      errLetter: 'Выбери букву класса.',
+      counter: function (i, total) { return 'Вопрос ' + i + ' из ' + total; },
+      hint: function (need) { return 'Выбери <b>ровно ' + need + '</b> варианта'; },
+      back: 'Назад', next: 'Далее', finishBtn: 'Завершить',
+      sendingTitle: 'Отправляем ответы…',
+      sendingSub: 'Не закрывай страницу, это займёт несколько секунд.',
+      doneSub: 'Ответы отправлены психологу. Страницу можно закрыть.',
+      failedTitle: 'Ответы не отправились',
+      failedSub: 'Проверь подключение к интернету и попробуй ещё раз.',
+      retryBtn: 'Отправить ещё раз',
+      failedHint: 'Если не получается — скажи психологу, не закрывая эту страницу.'
+    },
+    kk: {
+      fioLabel: 'Аты-жөні', fioPlaceholder: 'Аты Тегі',
+      classLabel: 'Сынып',
+      schoolLabel: 'Мектеп', schoolPlaceholder: 'Мектеп атауы',
+      startBtn: 'Бастау',
+      meta: function (n) { return 'Сұрақтар саны: ' + n + ' · шамамен 7–10 минут алады'; },
+      errFio: 'Атыңды және тегіңді толық жаз.',
+      errGrade: 'Сынып санын таңда.',
+      errLetter: 'Сынып әрпін таңда.',
+      counter: function (i, total) { return 'Сұрақ ' + i + ' / ' + total; },
+      hint: function (need) { return '<b>Дәл ' + need + '</b> жауап нұсқасын таңда'; },
+      back: 'Артқа', next: 'Келесі', finishBtn: 'Аяқтау',
+      sendingTitle: 'Жауаптар жіберілуде…',
+      sendingSub: 'Бетті жаппа, бұл бірнеше секунд алады.',
+      doneSub: 'Жауаптар психологқа жіберілді. Бетті жабуға болады.',
+      failedTitle: 'Жауаптар жіберілмеді',
+      failedSub: 'Интернет байланысын тексеріп, қайта көріп көр.',
+      retryBtn: 'Қайта жіберу',
+      failedHint: 'Болмай жатса — бұл бетті жаппай, психологқа айт.'
+    }
+  };
 
   var state = {
+    lang: pickInitialLang(),
     student: null,
     answers: {},        // { номер вопроса: [индексы вариантов] }
     order:   {},        // порядок выбора внутри вопроса
@@ -21,6 +76,20 @@
     startedAt: null,
     sent: false
   };
+
+  function pickInitialLang() {
+    if (!LANGS) return null;
+    try {
+      var saved = localStorage.getItem(LANG_KEY);
+      if (saved && T.i18n[saved]) return saved;
+    } catch (ignored) {}
+    return (T.defaultLang && T.i18n[T.defaultLang]) ? T.defaultLang : LANGS[0];
+  }
+
+  /* Текст методики на текущем языке; без T.i18n методика одноязычная —
+     тогда весь текст лежит прямо на T. */
+  function TT() { return T.i18n ? T.i18n[state.lang] : T; }
+  function ui() { return UI[state.lang] || UI.ru; }
 
   /* ------------------------------------------------------------ утилиты */
   function $(sel, root) { return (root || document).querySelector(sel); }
@@ -41,29 +110,54 @@
            ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
   }
 
+  /* Переключатель языка — рисуется первым в карточке, если методика
+     двуязычная. rerender вызывается после смены языка, чтобы перерисовать
+     текущий экран заново на новом языке, не теряя прогресс. */
+  function renderLangSwitch(wrap, rerender) {
+    if (!LANGS || LANGS.length < 2) return;
+    var box = el('div', 'langswitch');
+    LANGS.forEach(function (code) {
+      var b = el('button', code === state.lang ? 'on' : '', LANG_LABEL[code] || code.toUpperCase());
+      b.type = 'button';
+      b.setAttribute('aria-pressed', code === state.lang ? 'true' : 'false');
+      b.addEventListener('click', function () {
+        if (state.lang === code) return;
+        state.lang = code;
+        try { localStorage.setItem(LANG_KEY, code); } catch (ignored) {}
+        try { document.documentElement.lang = code; } catch (ignored) {}
+        rerender();
+      });
+      box.appendChild(b);
+    });
+    wrap.insertBefore(box, wrap.firstChild);
+  }
+
   /* ====================================================== ЭКРАН 1: старт */
   function renderIntro(root) {
+    var Tx = TT(), Ux = ui();
+    try { document.title = Tx.title + ' — ' + Tx.author; } catch (ignored) {}
     var wrap = el('section', 'card');
     var picked = { grade: null, letter: null };
 
     wrap.innerHTML =
-      '<h1>' + esc(T.title) + '</h1>' +
-      '<p class="sub">' + esc(T.author) + ' · ' + esc(T.audience) + '</p>' +
-      '<p class="greet">' + esc(T.greeting) + '</p>' +
-      '<p class="instr">' + T.instruction + '</p>' +
-      '<p class="meta">Вопросов: ' + T.questions.length + ' · займёт около 7–10 минут</p>' +
+      '<h1>' + esc(Tx.title) + '</h1>' +
+      '<p class="sub">' + esc(Tx.author) + ' · ' + esc(Tx.audience) + '</p>' +
+      '<p class="greet">' + esc(Tx.greeting) + '</p>' +
+      '<p class="instr">' + Tx.instruction + '</p>' +
+      '<p class="meta">' + Ux.meta(Tx.questions.length) + '</p>' +
       '<form id="startForm" novalidate>' +
-        '<label>Имя и фамилия <span class="req">*</span>' +
-          '<input name="fio" autocomplete="name" required placeholder="Имя Фамилия">' +
+        '<label>' + esc(Ux.fioLabel) + ' <span class="req">*</span>' +
+          '<input name="fio" autocomplete="name" required placeholder="' + esc(Ux.fioPlaceholder) + '">' +
         '</label>' +
         '<div class="field">' +
-          '<span class="lab">Класс <span class="req">*</span></span>' +
+          '<span class="lab">' + esc(Ux.classLabel) + ' <span class="req">*</span></span>' +
           '<div class="chips" id="grades"></div>' +
           '<div class="chips" id="letters"></div>' +
         '</div>' +
-        (CFG.askSchool ? '<label>Школа<input name="school" placeholder="МБОУ СОШ №1"></label>' : '') +
+        (CFG.askSchool ? '<label>' + esc(Ux.schoolLabel) +
+          '<input name="school" placeholder="' + esc(Ux.schoolPlaceholder) + '"></label>' : '') +
         '<p class="err" id="startErr" hidden></p>' +
-        '<button class="btn primary" type="submit">Начать</button>' +
+        '<button class="btn primary" type="submit">' + esc(Ux.startBtn) + '</button>' +
       '</form>';
 
     /* Ряд кнопок с единственным выбором */
@@ -100,10 +194,10 @@
       function fail(msg) { err.textContent = msg; err.hidden = false; }
 
       if (fio.length < 3 || fio.indexOf(' ') === -1) {
-        return fail('Напиши имя и фамилию полностью.');
+        return fail(Ux.errFio);
       }
-      if (picked.grade === null) return fail('Выбери цифру класса.');
-      if (picked.letter === null) return fail('Выбери букву класса.');
+      if (picked.grade === null) return fail(Ux.errGrade);
+      if (picked.letter === null) return fail(Ux.errLetter);
 
       state.student = {
         fio: fio,
@@ -115,29 +209,32 @@
       renderQuiz(root);
     });
 
+    renderLangSwitch(wrap, function () { renderIntro(root); });
+
     root.innerHTML = '';
     root.appendChild(wrap);
   }
 
   /* ====================================================== ЭКРАН 2: вопросы */
   function renderQuiz(root) {
-    var q = T.questions[state.idx];
+    var Tx = TT(), Ux = ui();
+    var q = Tx.questions[state.idx];
     var need = T.choicesRequired;
     if (!state.answers[q.n]) { state.answers[q.n] = []; state.order[q.n] = []; }
 
     var wrap = el('section', 'card quiz');
-    var pct = Math.round(state.idx / T.questions.length * 100);
+    var pct = Math.round(state.idx / Tx.questions.length * 100);
 
     wrap.innerHTML =
       '<div class="progress"><div class="bar" style="width:' + pct + '%"></div></div>' +
-      '<p class="counter">Вопрос ' + (state.idx + 1) + ' из ' + T.questions.length + '</p>' +
+      '<p class="counter">' + esc(Ux.counter(state.idx + 1, Tx.questions.length)) + '</p>' +
       '<h2 class="stem">' + esc(q.stem) + '</h2>' +
-      '<p class="hint">Выбери <b>ровно ' + need + '</b> варианта</p>' +
+      '<p class="hint">' + Ux.hint(need) + '</p>' +
       '<ul class="opts" id="opts"></ul>' +
       '<div class="nav">' +
-        '<button class="btn ghost" id="prev"' + (state.idx === 0 ? ' disabled' : '') + '>Назад</button>' +
+        '<button class="btn ghost" id="prev"' + (state.idx === 0 ? ' disabled' : '') + '>' + esc(Ux.back) + '</button>' +
         '<button class="btn primary" id="next">' +
-          (state.idx === T.questions.length - 1 ? 'Завершить' : 'Далее') +
+          (state.idx === Tx.questions.length - 1 ? esc(Ux.finishBtn) : esc(Ux.next)) +
         '</button>' +
       '</div>';
 
@@ -189,9 +286,11 @@
     });
     nextBtn.addEventListener('click', function () {
       if (state.answers[q.n].length !== need) return;
-      if (state.idx === T.questions.length - 1) finish(root);
+      if (state.idx === Tx.questions.length - 1) finish(root);
       else { state.idx++; renderQuiz(root); }
     });
+
+    renderLangSwitch(wrap, function () { renderQuiz(root); });
 
     root.innerHTML = '';
     root.appendChild(wrap);
@@ -201,6 +300,7 @@
 
   /* ====================================================== ОТПРАВКА */
   function buildPayload() {
+    var Tx = TT();
     var mins = Math.max(1, Math.round((Date.now() - state.startedAt) / 60000));
     return {
       testId: T.id,
@@ -209,7 +309,7 @@
       school: state.student.school,
       date:   stamp(new Date()),
       duration: mins + ' мин',
-      answers: T.questions.map(function (q) {
+      answers: Tx.questions.map(function (q) {
         var picks = (state.answers[q.n] || []).slice().sort(function (a, b) { return a - b; });
         return {
           n: q.n,
@@ -246,6 +346,7 @@
 
   /* ====================================================== ЭКРАН 3: финал */
   function finish(root) {
+    var Tx = TT(), Ux = ui();
     var payload = buildPayload();
 
     var wrap = el('section', 'card center');
@@ -261,27 +362,26 @@
     function sending() {
       stage.innerHTML =
         '<div class="spinner" aria-hidden="true"></div>' +
-        '<h1 class="thanks">Отправляем ответы…</h1>' +
-        '<p class="sub">Не закрывай страницу, это займёт несколько секунд.</p>';
+        '<h1 class="thanks">' + esc(Ux.sendingTitle) + '</h1>' +
+        '<p class="sub">' + esc(Ux.sendingSub) + '</p>';
     }
 
     function done() {
       state.sent = true;
       stage.innerHTML =
         '<div class="tick" aria-hidden="true">✓</div>' +
-        '<h1 class="thanks">' + esc(T.finalNote) + '</h1>' +
-        '<p class="sub">Ответы отправлены психологу. Страницу можно закрыть.</p>';
+        '<h1 class="thanks">' + esc(Tx.finalNote) + '</h1>' +
+        '<p class="sub">' + esc(Ux.doneSub) + '</p>';
     }
 
     function failed(msg) {
       stage.innerHTML =
         '<div class="cross" aria-hidden="true">!</div>' +
-        '<h1 class="thanks">Ответы не отправились</h1>' +
-        '<p class="sub warn">Проверь подключение к интернету и попробуй ещё раз.<br>' +
+        '<h1 class="thanks">' + esc(Ux.failedTitle) + '</h1>' +
+        '<p class="sub warn">' + esc(Ux.failedSub) + '<br>' +
           '<span class="tiny">' + esc(msg) + '</span></p>' +
-        '<button class="btn primary" id="retry">Отправить ещё раз</button>' +
-        '<p class="sub tiny">Если не получается — скажи психологу, ' +
-          'не закрывая эту страницу.</p>';
+        '<button class="btn primary" id="retry">' + esc(Ux.retryBtn) + '</button>' +
+        '<p class="sub tiny">' + esc(Ux.failedHint) + '</p>';
       $('#retry', stage).addEventListener('click', attempt);
     }
 
@@ -310,6 +410,7 @@
   window.PSY_START = function (rootSel) {
     var root = $(rootSel);
     lockZoom();
+    if (state.lang) { try { document.documentElement.lang = state.lang; } catch (ignored) {} }
     renderIntro(root);
     window.addEventListener('beforeunload', function (e) {
       if (state.startedAt && !state.sent) { e.preventDefault(); e.returnValue = ''; }
