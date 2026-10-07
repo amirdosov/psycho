@@ -26,10 +26,17 @@
    ВАЖНО: после каждой правки этого скрипта нужно заново выпустить версию:
    Развернуть → Управление развёртываниями → карандаш → Версия: «Новая» →
    Развернуть. Иначе сайт продолжит работать со старым кодом.
+
+   ТРИ ВИДА МЕТОДИК (поле kind в KEYS):
+     motivation — мотивация Лукьяновой: баллы по ключу, письмо с PDF;
+     wellbeing  — шкала благополучия: сумма 0–36, письмо с PDF;
+     survey     — анонимная анкета без ключа: писем нет, каждый ответ —
+                  строка в таблице, а сводку по классу психолог строит
+                  сам из меню таблицы «Психодиагностика».
    ========================================================================= */
 
 var EMAIL = 'ВАША_ПОЧТА@example.com';   // ← впишите сюда свой адрес
-var SHEET = 'Результаты';             // имя листа-журнала
+var SHEET = 'Результаты';             // лист-журнал мотивации (у других методик свой)
 
 /* Предел писем в сутки: не даёт потоку выдуманных заявок съесть суточную
    квоту Gmail (около 100 писем). Сверх предела заявки продолжают попадать
@@ -61,8 +68,10 @@ var KEYS = {
 
   'motivaciya-lukyanova': {
 
+    kind:   'motivation',
     title:  'Методика изучения мотивации обучения старшеклассников',
     author: 'М.И. Лукьянова, Н.В. Калинина',
+    filePrefix: 'Мотивация',
 
     /* Ключи ниже — раздел «для учащихся 10-11-го класса» первоисточника
        (таблицы 17/18/19/21). Максимумы блоков посчитаны как сумма двух
@@ -146,6 +155,224 @@ var KEYS = {
       V:  ['недопущение неудачи', 'стремление к успеху'],
       VI: ['пассивность', 'активная реализация']
     }
+  },
+
+  /* ----------------------------------------------------------------------
+     ШКАЛА БЛАГОПОЛУЧИЯ ПОДРОСТКА — К. Рифф. Ключ и уровни — из сборника
+     диагностических методик (раздел 1.2.7), одинаковые в казахской
+     и русской версиях. Сами 18 утверждений по содержанию совпадают со
+     шкалой депрессии Бирлесона (DSRS), но счёт в сборнике обратный: чем
+     ВЫШЕ балл, тем лучше. Реализовано как в сборнике.
+     ---------------------------------------------------------------------- */
+  'blagopoluchie-riff': {
+
+    kind:   'wellbeing',
+    title:  'Шкала благополучия подростка',
+    author: 'К. Рифф (адаптация Т.Д. Шевеленковой, П.П. Фесенко)',
+    filePrefix: 'Благополучие',
+    sheet:  'Благополучие',
+
+    // позиция варианта: 0 — «большую часть времени», 1 — «иногда», 2 — «никогда»
+    options: ['Большую часть времени', 'Иногда', 'Никогда'],
+
+    /* Положительные утверждения: 2-1-0 по порядку вариантов.
+       Остальные (3, 5, 6, 10, 14, 15, 17, 18) — обратные: 0-1-2. */
+    positive: [1, 2, 4, 7, 8, 9, 11, 12, 13, 16],
+    max: 36,
+    maxPositive: 20,
+    maxNegative: 16,
+
+    items: [
+      'Я, как и раньше, стремлюсь к чему-то позитивному',
+      'Я сплю очень хорошо',
+      'Мне хочется плакать',
+      'Мне нравится ходить куда-нибудь',
+      'Мне хочется уйти из дома',
+      'У меня болит желудок / бывают судороги / головная боль',
+      'У меня много энергии',
+      'Мне нравится моя еда',
+      'Я могу постоять за себя',
+      'Я думаю, жизнь ничего не стоит',
+      'Я хорош(а) в том, что я делаю',
+      'Мне нравится то, что я делаю, так же, как и раньше',
+      'Я люблю разговаривать с моими друзьями и семьёй',
+      'У меня ужасные сны',
+      'Я чувствую себя очень одиноким / одинокой',
+      'Меня легко развеселить',
+      'Я чувствую себя так грустно, что едва могу это вынести',
+      'Мне очень скучно'
+    ],
+
+    // от верхнего уровня к нижнему; min — нижняя граница
+    levels: [
+      { min: 27, name: 'высокий', color: '#15803d',
+        text: 'Подросток ощущает удовлетворение жизнью, имеет позитивное ' +
+              'мировосприятие и устойчив к стрессам.' },
+      { min: 14, name: 'средний', color: '#3b6ef5',
+        text: 'Возможны колебания настроения, периодические трудности, но в целом ' +
+              'подросток справляется с жизненными ситуациями.' },
+      { min: 0,  name: 'низкий',  color: '#dc2626',
+        text: 'Подросток может испытывать чувство неудовлетворённости, подавленности ' +
+              'и нуждается в дополнительной поддержке.' }
+    ],
+
+    /* «Обратить внимание» — в сборнике этого нет, добавлено по просьбе
+       психолога. Отдельный ответ здесь может значить больше общей суммы:
+       при среднем балле ученик всё равно может написать, что жизнь ничего
+       не стоит. picks — какие ответы отмечать (0 — «большую часть времени»,
+       1 — «иногда»). */
+    alerts: [
+      { n: 3,  picks: [0],    short: 'хочется плакать' },
+      { n: 5,  picks: [0],    short: 'хочется уйти из дома' },
+      { n: 10, picks: [0, 1], short: 'жизнь ничего не стоит' },
+      { n: 14, picks: [0],    short: 'ужасные сны' },
+      { n: 15, picks: [0],    short: 'очень одиноко' },
+      { n: 17, picks: [0, 1], short: 'так грустно, что едва может вынести' }
+    ]
+  },
+
+  /* ----------------------------------------------------------------------
+     ЭКСПРЕСС-АНКЕТИРОВАНИЕ «КАК С ТОБОЙ ОБРАЩАЮТСЯ» — ННПИБД «Өркен».
+     Анонимная анкета без ключа (сборник, раздел 1.2.4). Тексты — русская
+     редакция по полной казахской версии; должны совпадать по порядку
+     вариантов с tests/kak-s-toboy-obrashchayutsya/data.js. Здесь они нужны
+     для таблицы и сводки. «Свой вариант» всегда последний.
+     ---------------------------------------------------------------------- */
+  'kak-s-toboy-obrashchayutsya': {
+
+    kind:   'survey',
+    title:  'Экспресс-анкетирование «Как с тобой обращаются»',
+    author: 'Авторский коллектив научных сотрудников ННПИБД «Өркен»',
+    sheet:  'Как с тобой обращаются',
+    short:  'Обращение',
+
+    questions: [
+      { n: 1, multi: true, other: true, short: 'Где чаще жестокое обращение',
+        stem: 'Где, по твоему мнению, ребёнок чаще всего сталкивается с жестоким обращением?',
+        options: ['В семье', 'На улице', 'В школе', 'В социальных сетях', 'Свой вариант'] },
+
+      { n: 2, other: true, short: 'Отношения с родителями',
+        stem: 'Какие у тебя отношения с родителями?',
+        options: ['Хорошие, они меня понимают и всегда поддерживают',
+                  'Не очень хорошие, иногда ссоримся или не соглашаемся',
+                  'Плохие, меня часто ругают',
+                  'Очень плохие, меня часто ругают и бьют',
+                  'Свой вариант'] },
+
+      { n: 3, multi: true, other: true, short: 'Как наказывают',
+        stem: 'Какие меры чаще всего используют, когда тебя наказывают?',
+        options: ['Говорят резко или критикуют',
+                  'Запрещают телефон, компьютер или телевизор',
+                  'Не дают денег',
+                  'Запрещают встречаться с друзьями',
+                  'Объясняют, почему я был(а) неправ(а)',
+                  'Стараются понять мои чувства или настроение',
+                  'Используют физическое наказание',
+                  'Меня никогда не наказывают',
+                  'Свой вариант'] },
+
+      { n: 4, other: true, short: 'Согласен ли со словами и действиями родителей',
+        stem: 'Ты считаешь правильными слова и действия своих родителей в отношении тебя?',
+        options: ['Да, согласен(а) с их действиями',
+                  'Скорее да, но бывает, что не согласен(а)',
+                  'Нет, не согласен(а)',
+                  'Скорее нет, но понимаю их намерения',
+                  'Свой вариант'] },
+
+      { n: 5, other: true, short: 'Обижали ли родители',
+        stem: 'Бывало ли, что родители поступили с тобой так, что ты почувствовал(а) себя обиженным(ой)?',
+        options: ['Да, это случается часто', 'Иногда', 'Такое бывает редко', 'Никогда',
+                  'Не могу сказать', 'Свой вариант'] },
+
+      { n: 6, other: true, short: 'Защищённость в семье',
+        stem: 'Ты чувствуешь себя защищённым(ой) в своей семье?',
+        options: ['Да, всегда', 'Иногда', 'Полностью не ощущаю, но бывает поддержка',
+                  'Нет, не чувствую себя защищённым(ой) или любимым(ой)', 'Свой вариант'] },
+
+      { n: 7, other: true, short: 'Насилие или травля в соцсетях',
+        stem: 'Сталкивался(-ась) ли ты с насилием или травлей в социальных сетях?',
+        options: ['Да', 'Нет', 'Иногда', 'Свой ответ'] },
+
+      { n: 8, multi: true, other: true, short: 'Насилие в школе',
+        stem: 'С какими видами насилия ты сталкивался(-ась) в школе?',
+        options: ['Физическое насилие (удары, толчки, рывки)',
+                  'Эмоциональное насилие (оскорбления, унижения, крики)',
+                  'Нарушение личных границ (неприятные прикосновения)',
+                  'Игнорирование (учитель не обращает внимания на вопросы или проблемы)',
+                  'Манипуляции (запугивание плохими оценками)',
+                  'Не сталкивался(-ась)',
+                  'Свой вариант'] },
+
+      { n: 9, multi: true, other: true, skipIf: { n: 8, pick: 5 }, short: 'Кто проявлял насилие в школе',
+        stem: 'Если ты столкнулся(-ась) с насилием в школе, кто проявлял его по отношению к тебе?',
+        options: ['Учителя', 'Одноклассники', 'Друзья', 'Ученики других классов',
+                  'Другие сотрудники школы', 'Свой вариант'] },
+
+      { n: 10, multi: true, other: true, short: 'Что сделает в трудной ситуации',
+        stem: 'Если ты окажешься в сложной ситуации (например, если тебя запугают или обидят), что ты сделаешь?',
+        options: ['Попрошу помощи у родителей',
+                  'Попробую решить проблему с помощью друзей',
+                  'Попрошу помощи у родственников',
+                  'Поговорю с классным руководителем',
+                  'Обращусь к психологу',
+                  'Обращусь к социальному педагогу',
+                  'Схожу к директору',
+                  'Обращусь в полицию',
+                  'Поищу советы в интернете',
+                  'Позвоню по телефону доверия',
+                  'Попробую справиться самостоятельно',
+                  'Свой вариант'] }
+    ],
+
+    /* Тревожные показатели — первым блоком в сводке: доля учеников
+       (от всех анкет выборки), отметивших хотя бы один из вариантов picks. */
+    signals: [
+      { n: 2, picks: [2, 3], label: 'Отношения с родителями плохие или очень плохие' },
+      { n: 2, picks: [3],    label: '…из них: «меня часто ругают и бьют»' },
+      { n: 3, picks: [6],    label: 'Родители применяют физическое наказание' },
+      { n: 5, picks: [0],    label: 'Родители часто обижают' },
+      { n: 6, picks: [3],    label: 'Не чувствует себя защищённым(ой) или любимым(ой) в семье' },
+      { n: 7, picks: [0, 2], label: 'Насилие или травля в соцсетях (да или иногда)' },
+      { n: 8, picks: [0],    label: 'Физическое насилие в школе' },
+      { n: 8, picks: [1],    label: 'Эмоциональное насилие в школе' },
+      { n: 8, picks: [2],    label: 'Нарушение личных границ в школе' },
+      { n: 9, picks: [0, 4], label: 'Насилие со стороны учителей или сотрудников школы' }
+    ]
+  }
+};
+
+/* Что делать с ответом методики каждого вида: подсчёт, тема и тело
+   письма, текстовая версия, журнал. У анонимной анкеты (survey) писем
+   нет — только журнал. */
+var KINDS = {
+  motivation: {
+    score: score,
+    body: reportBody,
+    plain: plainText,
+    log: logToSheet,
+    subject: function (K, d, res) {
+      return 'Результат · ' + d.fio + ' · ' + d.klass + ' класс · уровень ' +
+             res.levels.total.level + ' (' + res.levels.total.name + ')';
+    },
+    footer: function (K, res) {
+      return 'Уровень ' + res.levels.total.level + ' · ' + res.total + ' из ' + K.totalMax + ' баллов';
+    }
+  },
+  wellbeing: {
+    score: scoreWellbeing,
+    body: wbReportBody,
+    plain: wbPlainText,
+    log: wbLogToSheet,
+    subject: function (K, d, res) {
+      return 'Благополучие · ' + d.fio + ' · ' + d.klass + ' класс · ' + res.level.name +
+             ' уровень' + (res.alerts.length ? ' · ⚠ обратить внимание' : '');
+    },
+    footer: function (K, res) {
+      return 'Уровень благополучия: ' + res.level.name + ' · ' + res.total + ' из ' + K.max + ' баллов';
+    }
+  },
+  survey: {
+    log: logSurvey
   }
 };
 
@@ -155,6 +382,7 @@ function doPost(e) {
     var d = JSON.parse(e.postData.contents);
     var K = KEYS[d.testId];
     if (!K) throw new Error('Неизвестная методика: ' + d.testId);
+    var kind = KINDS[K.kind];
     validate(K, d);
 
     // Страница повторяет отправку при обрыве связи. Если первая попытка
@@ -163,19 +391,24 @@ function doPost(e) {
     // ошибку там, где на самом деле всё в порядке.
     if (isRepeat(d)) return json({ ok: true });
 
-    var res = score(K, d.answers);
+    // анонимная анкета: только строка в таблице, писем нет
+    if (K.kind === 'survey') {
+      kind.log(K, d);
+      return json({ ok: true });
+    }
+
+    var res = kind.score(K, d.answers);
 
     // Сначала журнал, потом почта: если письма упрутся в суточный предел,
     // результат всё равно не пропадёт.
-    logToSheet(K, d, res);
+    kind.log(K, d, res);
 
     if (mailQuotaLeft()) {
       MailApp.sendEmail({
         to: EMAIL,
-        subject: 'Результат · ' + d.fio + ' · ' + d.klass + ' класс · уровень ' +
-                 res.levels.total.level + ' (' + res.levels.total.name + ')',
+        subject: kind.subject(K, d, res),
         htmlBody: emailHtml(K, d, res),
-        body: plainText(K, d, res),
+        body: kind.plain(K, d, res),
         attachments: [makePdf(K, d, res)],
         name: 'Психодиагностика'
       });
@@ -203,15 +436,9 @@ function doPost(e) {
    ====================================================================== */
 
 /* Заявка должна быть похожа на настоящую: столько ответов, сколько вопросов
-   в методике, в каждом ровно два выбранных варианта, осмысленные ФИО
+   в методике, в каждом допустимое число вариантов, осмысленные ФИО
    и класс. Мусор отсекается до того, как будет отправлено письмо. */
 function validate(K, d) {
-  var need = 0;
-  for (var b in K.blocks) need += K.blocks[b].qs.length;
-
-  var fio = String(d.fio || '').trim();
-  if (fio.length < 3 || fio.length > 80) throw new Error('некорректное ФИО');
-
   // Класс приходит из кнопок и уже имеет вид «7Б». Приводим к нему и то,
   // что могло прийти иначе, — иначе в таблице заводятся «7 б» и «7Б»
   // как разные значения, и фильтр по классам перестаёт работать.
@@ -219,24 +446,76 @@ function validate(K, d) {
   if (!klass || klass.length > 6) throw new Error('некорректный класс');
   d.klass = klass;
 
+  if (K.kind === 'survey') return validateSurvey(K, d);
+
+  var fio = String(d.fio || '').trim();
+  if (fio.length < 3 || fio.length > 80) throw new Error('некорректное ФИО');
+
+  var need = 0, picks = 2, nOpts = 99;
+  if (K.kind === 'wellbeing') {
+    need = K.items.length; picks = 1; nOpts = K.options.length;
+  } else {
+    for (var b in K.blocks) need += K.blocks[b].qs.length;
+  }
+
   if (!d.answers || d.answers.length !== need) {
     throw new Error('ожидается ответов: ' + need);
   }
   for (var i = 0; i < d.answers.length; i++) {
     var a = d.answers[i];
-    if (!a || !a.picks || a.picks.length !== 2) {
-      throw new Error('в вопросе ' + (a && a.n) + ' должно быть два варианта');
+    if (!a || !a.picks || a.picks.length !== picks) {
+      throw new Error('в вопросе ' + (a && a.n) + ' должно быть вариантов: ' + picks);
+    }
+    if (K.kind === 'wellbeing' && (a.n !== i + 1 || !validPick(a.picks[0], nOpts))) {
+      throw new Error('некорректный ответ на вопрос ' + a.n);
     }
   }
 }
 
-/* Та же анкета от того же ученика в пределах минуты считается повтором. */
+function validPick(p, nOpts) {
+  return typeof p === 'number' && p % 1 === 0 && p >= 0 && p < nOpts;
+}
+
+/* Анонимная анкета: имени нет, зато есть случайный номер прохождения sid.
+   Число вариантов — по правилам вопроса: один, или несколько у multi,
+   или ни одного у пропущенного (skipIf) вопроса. */
+function validateSurvey(K, d) {
+  d.fio = '';
+  d.school = '';
+  var sid = String(d.sid || '');
+  if (sid.length < 6 || sid.length > 40) throw new Error('нет номера прохождения');
+
+  var Q = K.questions;
+  if (!d.answers || d.answers.length !== Q.length) {
+    throw new Error('ожидается ответов: ' + Q.length);
+  }
+  Q.forEach(function (q, i) {
+    var a = d.answers[i];
+    if (!a || a.n !== q.n) throw new Error('нарушен порядок вопросов');
+    var picks = a.picks || [];
+    if (a.skipped) {
+      if (!q.skipIf || picks.length) throw new Error('вопрос ' + q.n + ' нельзя пропустить');
+      return;
+    }
+    if (!picks.length || (!q.multi && picks.length !== 1)) {
+      throw new Error('в вопросе ' + q.n + ' неверное число вариантов');
+    }
+    picks.forEach(function (p) {
+      if (!validPick(p, q.options.length)) throw new Error('некорректный вариант в вопросе ' + q.n);
+    });
+    a.other = (q.other && picks.indexOf(q.options.length - 1) !== -1)
+      ? String(a.other || '').trim().slice(0, 300) : '';
+  });
+}
+
+/* Та же анкета от того же ученика в пределах минуты считается повтором.
+   У анонимной анкеты «тот же ученик» — тот же номер прохождения sid. */
 function isRepeat(d) {
   try {
     var cache = CacheService.getScriptCache();
     var key = Utilities.base64EncodeWebSafe(Utilities.computeDigest(
       Utilities.DigestAlgorithm.MD5,
-      d.testId + '|' + d.fio + '|' + d.klass,
+      d.testId + '|' + d.fio + '|' + d.klass + '|' + (d.sid || ''),
       Utilities.Charset.UTF_8));
     if (cache.get(key)) return true;
     cache.put(key, '1', 60);
@@ -535,7 +814,8 @@ function answersRows(rows) {
       '<td width="16" valign="top" style="padding:5px 0 5px 0;color:' + C.muted +
         ';border-top:1px solid ' + C.line + ';">' + r.n + '.</td>' +
       '<td valign="top" style="padding:5px 6px 5px 0;border-top:1px solid ' + C.line + ';">' +
-        '<div style="color:' + C.ink + ';font-weight:bold;">' + esc(r.stem) + '</div>';
+        '<div style="color:' + (r.alert ? C.neg : C.ink) + ';font-weight:bold;">' +
+          (r.alert ? '! ' : '') + esc(r.stem) + '</div>';
     for (var i = 0; i < r.letters.length; i++) {
       h += '<div style="color:' + C.muted + ';padding-top:1px;">' +
              r.letters[i] + ') ' + esc(r.texts[i]) +
@@ -609,7 +889,9 @@ function pdfHtml(K, d, res) {
 
     h2('ОТВЕТЫ ОБУЧАЮЩЕГОСЯ') +
     '<div style="font-size:11px;color:' + C.muted + ';padding-bottom:8px;">' +
-      'В квадратных скобках — балл варианта по ключу методики.</div>' +
+      'В квадратных скобках — балл варианта по ключу методики.' +
+      (res.alerts && res.alerts.length
+        ? ' Красным с «!» — ответы из блока «Обратить внимание».' : '') + '</div>' +
     answersTable(res) +
 
     '<div style="margin-top:22px;padding-top:10px;border-top:1px solid ' + C.line +
@@ -622,7 +904,7 @@ function pdfHtml(K, d, res) {
 
 /* ---------------------------------------------------- HTML для письма */
 function emailHtml(K, d, res) {
-  var lv = res.levels.total;
+  var kind = KINDS[K.kind];
   return '<div style="background-color:' + C.soft + ';padding:22px 0;">' +
     '<table width="640" cellpadding="0" cellspacing="0" border="0" align="center" ' +
       'style="background-color:#ffffff;border:1px solid ' + C.line +
@@ -636,7 +918,7 @@ function emailHtml(K, d, res) {
       '<div style="font-size:12px;color:' + C.muted + ';padding-bottom:18px;">' +
         esc(K.title) + ' · ' + esc(K.author) + '</div>' +
 
-      reportBody(K, d, res) +
+      kind.body(K, d, res) +
 
       '<div style="margin-top:24px;padding:12px 14px;background-color:' + C.soft +
         ';border-radius:8px;font-size:12px;color:' + C.muted + ';">' +
@@ -644,8 +926,7 @@ function emailHtml(K, d, res) {
 
       '<div style="margin-top:16px;padding-top:12px;border-top:1px solid ' + C.line +
         ';font-size:11px;color:' + C.muted + ';">' +
-        'Уровень ' + lv.level + ' · ' + res.total + ' из ' + K.totalMax +
-        ' баллов · ' + esc(d.date) + '</div>' +
+        kind.footer(K, res) + ' · ' + esc(d.date) + '</div>' +
 
     '</td></tr></table></div>';
 }
@@ -680,7 +961,7 @@ function safeName(s) {
 }
 
 function makePdf(K, d, res) {
-  var name = 'Мотивация_' + safeName(d.fio) + '_' + safeName(d.klass) + '.pdf';
+  var name = K.filePrefix + '_' + safeName(d.fio) + '_' + safeName(d.klass) + '.pdf';
   return Utilities.newBlob(pdfHtml(K, d, res), MimeType.HTML, name)
                   .getAs(MimeType.PDF).setName(name);
 }
@@ -705,6 +986,421 @@ function logToSheet(K, d, res) {
                 res.points.II,  res.levels.II.name,
                 res.points.III, res.levels.III.name,
                 res.polar.IV, res.polar.V, res.polar.VI, d.duration]);
+}
+
+/* ================================================= ШКАЛА БЛАГОПОЛУЧИЯ */
+
+function scoreWellbeing(K, answers) {
+  var res = { total: 0, pos: 0, neg: 0, rows: [], alerts: [] };
+
+  answers.forEach(function (a) {
+    var i = a.picks[0];
+    var direct = K.positive.indexOf(a.n) !== -1;
+    var p = direct ? 2 - i : i;               // прямой пункт 2-1-0, обратный 0-1-2
+    res.total += p;
+    if (direct) res.pos += p; else res.neg += p;
+
+    var al = null;
+    K.alerts.forEach(function (x) {
+      if (x.n === a.n && x.picks.indexOf(i) !== -1) al = x;
+    });
+    if (al) res.alerts.push({ n: a.n, short: al.short, stem: K.items[a.n - 1], answer: K.options[i] });
+
+    // утверждения в отчёте — по-русски, на каком бы языке ни отвечал ученик
+    res.rows.push({ n: a.n, block: '', stem: K.items[a.n - 1], letters: [a.letters[0]],
+                    texts: [K.options[i]], values: [String(p)], alert: !!al });
+  });
+
+  for (var k = 0; k < K.levels.length; k++) {
+    if (res.total >= K.levels[k].min) { res.level = K.levels[k]; break; }
+  }
+  return res;
+}
+
+/* Крупная плашка с уровнем и шкалой 0–36 */
+function wbLevelCard(K, res) {
+  var lv = res.level, col = lv.color;
+  var zones = K.levels.slice().reverse().map(function (l, i, arr) {
+    var top = i < arr.length - 1 ? arr[i + 1].min - 1 : K.max;
+    return l.min + '–' + top + ' ' + l.name;
+  }).join(' &nbsp;·&nbsp; ');
+  return '<table width="100%" cellpadding="0" cellspacing="0" border="0" ' +
+    'style="border-collapse:collapse;border:1px solid ' + C.line + ';">' +
+    '<tr>' +
+      '<td style="padding:14px 16px;border-left:6px solid ' + col + ';">' +
+        '<div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:' +
+          C.muted + ';">УРОВЕНЬ ПСИХОЛОГИЧЕСКОГО БЛАГОПОЛУЧИЯ</div>' +
+        '<div style="font-size:21px;font-weight:bold;color:' + col + ';padding-top:3px;">' +
+          lv.name.charAt(0).toUpperCase() + lv.name.slice(1) + ' уровень</div>' +
+        '<div style="font-size:12px;color:' + C.muted + ';padding-top:3px;">' +
+          res.total + ' баллов из ' + K.max + '</div>' +
+        '<div style="padding-top:9px;">' + barH(res.total / K.max * 100, col, 9) + '</div>' +
+        '<div style="font-size:10px;color:' + C.muted + ';padding-top:5px;">' + zones + '</div>' +
+      '</td>' +
+    '</tr></table>';
+}
+
+/* Отдельные тревожные ответы — красной полосой слева, каждый строкой */
+function wbAlerts(K, res) {
+  if (!res.alerts.length) {
+    return '<div style="font-size:12px;color:' + C.muted + ';">' +
+      'Тревожных ответов на отдельные утверждения нет.</div>';
+  }
+  var h = '<table width="100%" cellpadding="0" cellspacing="0" border="0" ' +
+          'style="border-collapse:collapse;">';
+  res.alerts.forEach(function (a) {
+    h += '<tr><td style="padding:7px 12px;border-left:4px solid ' + C.neg +
+      ';border-bottom:1px solid ' + C.line + ';font-size:12px;color:' + C.ink + ';">' +
+      '<b>' + a.n + '. ' + esc(a.stem) + '</b><br>' +
+      '<span style="color:' + C.neg + ';">ответ: «' + esc(a.answer) + '»</span></td></tr>';
+  });
+  h += '</table>' +
+    '<div style="font-size:11px;color:' + C.muted + ';padding-top:6px;">' +
+      'Блок отмечает отдельные ответы о плаче, желании уйти из дома, обесценивании жизни, ' +
+      'страшных снах, одиночестве и сильной грусти. Такие ответы стоит обсудить с учеником ' +
+      'лично, даже если общий балл средний или высокий.</div>';
+  return h;
+}
+
+function wbReportBody(K, d, res) {
+  var pctPos = res.pos / K.maxPositive * 100, pctNeg = res.neg / K.maxNegative * 100;
+  return studentCard(d) +
+    '<div style="height:16px;"></div>' +
+    wbLevelCard(K, res) +
+
+    h2('ОБРАТИТЬ ВНИМАНИЕ') +
+    wbAlerts(K, res) +
+
+    h2('ИЗ ЧЕГО СЛОЖИЛСЯ БАЛЛ') +
+    '<table width="100%" cellpadding="0" cellspacing="0" border="0">' +
+      chartRow('Позитивные утверждения', '(1, 2, 4, 7, 8, 9, 11, 12, 13, 16)',
+               barH(pctPos, C.accent), res.pos + ' / ' + K.maxPositive) +
+      chartRow('Негативные утверждения', '(3, 5, 6, 10, 14, 15, 17, 18 — обратный счёт)',
+               barH(pctNeg, C.accent), res.neg + ' / ' + K.maxNegative) +
+    '</table>' +
+    '<div style="font-size:11px;color:' + C.muted + ';padding-top:6px;">' +
+      'Чем длиннее полоса, тем благополучнее ответы в этой группе: у негативных ' +
+      'утверждений полный балл даёт ответ «Никогда».</div>' +
+
+    h2('ИНТЕРПРЕТАЦИЯ') +
+    '<div style="font-size:13px;color:' + C.ink + ';">' + esc(res.level.text) + '</div>' +
+    '<div style="font-size:11px;color:' + C.muted + ';padding-top:8px;">' +
+      'Опросник — инструмент предварительной оценки и не заменяет профессиональной ' +
+      'диагностики. При низких показателях рекомендуется более детальное индивидуальное ' +
+      'обследование и, при необходимости, коррекционная работа.</div>';
+}
+
+function wbPlainText(K, d, res) {
+  var L = [];
+  L.push(K.title + ' — ' + K.author);
+  L.push('');
+  L.push('Ученик: ' + d.fio + ', ' + d.klass + ' класс');
+  L.push('Дата: ' + d.date + ' (время прохождения: ' + d.duration + ')');
+  L.push('');
+  L.push('ИТОГ: ' + res.total + ' из ' + K.max + ' — ' + res.level.name + ' уровень');
+  L.push(res.level.text);
+  L.push('');
+  if (res.alerts.length) {
+    L.push('ОБРАТИТЬ ВНИМАНИЕ:');
+    res.alerts.forEach(function (a) { L.push('  ' + a.n + '. ' + a.stem + ' — «' + a.answer + '»'); });
+  } else {
+    L.push('Тревожных ответов на отдельные утверждения нет.');
+  }
+  L.push('');
+  L.push('Подробный протокол — в PDF во вложении.');
+  return L.join('\n');
+}
+
+/* Лист «Благополучие»: строка на ученика. В столбцах 1–18 — балл
+   за утверждение (0–2) с учётом прямого и обратного счёта. */
+function wbLogToSheet(K, d, res) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) return;
+  var sh = ss.getSheetByName(K.sheet);
+  if (!sh) {
+    var head = ['Дата', 'ФИО', 'Класс', 'Школа', 'Балл (0–36)', 'Уровень',
+                'Обратить внимание', 'Время'];
+    for (var n = 1; n <= K.items.length; n++) head.push(String(n));
+    sh = ss.insertSheet(K.sheet);
+    sh.appendRow(head);
+    sh.setFrozenRows(1);
+    sh.getRange(1, 1, 1, head.length).setFontWeight('bold');
+  }
+  sh.appendRow([d.date, d.fio, d.klass, d.school || '', res.total, res.level.name,
+                res.alerts.map(function (a) { return a.n + ' — ' + a.short + ' (' +
+                  a.answer.toLowerCase() + ')'; }).join('; '),
+                d.duration].concat(res.rows.map(function (r) { return Number(r.values[0]); })));
+}
+
+/* ==================================================== АНОНИМНАЯ АНКЕТА
+   Журнал без имён. Две меры, чтобы анонимность была настоящей, а не только
+   «имя не спрашиваем»:
+   · дата без времени — по минуте отправки ученика в небольшом классе
+     нетрудно вычислить;
+   · строка встаёт в СЛУЧАЙНОЕ место листа, а не в конец — иначе порядок
+     строк повторял бы порядок отправки («последним сдавал Петров»).
+     Отсортировать по дате можно в любой момент: Данные → Сортировка.
+   ====================================================================== */
+var CODES_HEAD = 'Коды для сводки (не править)';
+
+function surveyCell(q, a) {
+  if (a.skipped) return '— (вопрос пропущен)';
+  return a.picks.map(function (p) {
+    if (q.other && p === q.options.length - 1) return q.options[p] + ': «' + a.other + '»';
+    return q.options[p];
+  }).join('; ');
+}
+
+function logSurvey(K, d) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) return;
+
+  // 30 учеников отправляют почти одновременно: вставка строки в середину —
+  // две операции, и без замка две анкеты могли бы лечь в одну строку
+  var lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try {
+    var sh = ss.getSheetByName(K.sheet);
+    if (!sh) {
+      var head = ['Дата', 'Класс', 'Язык', 'Время'];
+      K.questions.forEach(function (q) { head.push(q.n + '. ' + q.short); });
+      head.push(CODES_HEAD);
+      sh = ss.insertSheet(K.sheet);
+      sh.appendRow(head);
+      sh.setFrozenRows(1);
+      sh.getRange(1, 1, 1, head.length).setFontWeight('bold').setWrap(true);
+    }
+
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    var codes = d.answers.map(function (a) {
+      return a.skipped ? null : (a.other ? { p: a.picks, o: a.other } : { p: a.picks });
+    });
+    var row = [today, d.klass, d.lang === 'ru' ? 'рус' : 'қаз', d.duration];
+    K.questions.forEach(function (q, i) { row.push(surveyCell(q, d.answers[i])); });
+    row.push(JSON.stringify(codes));
+
+    var last = sh.getLastRow();                         // вместе с шапкой
+    var pos = 2 + Math.floor(Math.random() * last);     // от 2 до last + 1
+    if (pos <= last) sh.insertRowBefore(pos);
+    var range = sh.getRange(pos, 1, 1, row.length);
+    range.setValues([row]).setFontWeight('normal');
+    sh.getRange(pos, 1).setNumberFormat('dd.MM.yyyy');
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/* ================================================= СВОДКА ИЗ МЕНЮ ТАБЛИЦЫ
+   Меню «Психодиагностика» появляется в таблице при её открытии.
+   Сводка строится на отдельном листе «Сводка · Обращение · 7А»: по каждому
+   вопросу — сколько учеников и какой процент выбрали каждый вариант.
+   Распечатать или сохранить: Файл → Скачать → PDF.
+   ====================================================================== */
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('Психодиагностика')
+    .addItem('Сводка «Как с тобой обращаются»…', 'summaryKakSToboy')
+    .addToUi();
+}
+
+// меню вызывает функцию без параметров — по обёртке на каждую анонимную анкету
+function summaryKakSToboy() { openSurveyDialog('kak-s-toboy-obrashchayutsya'); }
+
+function openSurveyDialog(testId) {
+  var K = KEYS[testId];
+  var ui = SpreadsheetApp.getUi();
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(K.sheet);
+  if (!sh || sh.getLastRow() < 2) {
+    ui.alert('Ответов пока нет',
+             'Лист «' + K.sheet + '» появится, когда первый ученик отправит анкету.',
+             ui.ButtonSet.OK);
+    return;
+  }
+
+  // классы, которые есть в ответах: 5А, 5Б, …, 11М — по числу, потом по букве
+  var seen = {};
+  sh.getRange(2, 2, sh.getLastRow() - 1, 1).getValues().forEach(function (r) {
+    if (r[0]) seen[String(r[0])] = true;
+  });
+  var classes = Object.keys(seen).sort(function (a, b) {
+    var na = parseInt(a, 10) || 0, nb = parseInt(b, 10) || 0;
+    return na !== nb ? na - nb : a.localeCompare(b, 'ru');
+  });
+
+  var opts = '<option value="">Все классы</option>' + classes.map(function (c) {
+    return '<option value="' + esc(c) + '">' + esc(c) + '</option>';
+  }).join('');
+
+  var html =
+    '<style>' +
+      'body{font-family:Arial,sans-serif;font-size:14px;color:#1a2233;margin:4px 2px;}' +
+      'label{display:block;margin:0 0 12px;color:#6b7689;font-size:13px;}' +
+      'select,input{display:block;width:100%;box-sizing:border-box;margin-top:4px;' +
+        'padding:8px;font-size:14px;border:1px solid #cfd6e3;border-radius:6px;}' +
+      '.row{display:flex;gap:10px;} .row label{flex:1;}' +
+      'button{background:#3b6ef5;color:#fff;border:0;border-radius:6px;padding:10px 18px;' +
+        'font-size:14px;cursor:pointer;width:100%;}' +
+      'button:disabled{opacity:.5;} #msg{color:#dc2626;margin-top:10px;font-size:13px;}' +
+      '.tip{color:#6b7689;font-size:12px;margin:-4px 0 14px;}' +
+    '</style>' +
+    '<label>Класс<select id="k">' + opts + '</select></label>' +
+    '<div class="row">' +
+      '<label>С даты<input type="date" id="f"></label>' +
+      '<label>По дату<input type="date" id="t"></label>' +
+    '</div>' +
+    '<div class="tip">Даты можно не заполнять — тогда в сводку войдут все ответы.</div>' +
+    '<button id="go">Построить сводку</button>' +
+    '<div id="msg"></div>' +
+    '<script>' +
+      'document.getElementById("go").onclick=function(){' +
+        'var b=this;b.disabled=true;b.textContent="Строю…";' +
+        'google.script.run' +
+          '.withSuccessHandler(function(){google.script.host.close();})' +
+          '.withFailureHandler(function(e){b.disabled=false;b.textContent="Построить сводку";' +
+            'document.getElementById("msg").textContent=e.message||e;})' +
+          '.buildSurveySummary("' + testId + '",' +
+            'document.getElementById("k").value,' +
+            'document.getElementById("f").value,' +
+            'document.getElementById("t").value);' +
+      '};' +
+    '</script>';
+
+  ui.showModalDialog(HtmlService.createHtmlOutput(html).setWidth(380).setHeight(300),
+                     'Сводка по классу');
+}
+
+function parseDay(s, endOfDay) {
+  if (!s) return null;
+  var p = String(s).split('-');
+  var d = new Date(+p[0], +p[1] - 1, +p[2]);
+  if (endOfDay) d.setHours(23, 59, 59, 999);
+  return d;
+}
+
+function fmtDay(d) {
+  return Utilities.formatDate(d, Session.getScriptTimeZone(), 'dd.MM.yyyy');
+}
+
+/* Вызывается из окна сводки. klass — '' для всех классов,
+   from/to — 'гггг-мм-дд' или ''. */
+function buildSurveySummary(testId, klass, from, to) {
+  var K = KEYS[testId];
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var src = ss.getSheetByName(K.sheet);
+  var data = src.getDataRange().getValues();
+  var codeCol = data[0].indexOf(CODES_HEAD);
+  if (codeCol === -1) throw new Error('На листе «' + K.sheet + '» нет столбца «' + CODES_HEAD + '».');
+
+  var dFrom = parseDay(from, false), dTo = parseDay(to, true);
+  var forms = [];
+  for (var r = 1; r < data.length; r++) {
+    var row = data[r];
+    if (klass && String(row[1]) !== klass) continue;
+    var day = row[0] instanceof Date ? row[0] : null;
+    if ((dFrom || dTo) && !day) continue;
+    if (dFrom && day < dFrom) continue;
+    if (dTo && day > dTo) continue;
+    try { forms.push(JSON.parse(row[codeCol])); } catch (ignored) {}
+  }
+  var N = forms.length;
+  if (!N) throw new Error('За выбранный период анкет ' + (klass ? 'класса ' + klass : '') + ' нет.');
+
+  // ------------------------------------------------------------- подсчёт
+  var stat = K.questions.map(function (q, i) {
+    var s = { answered: 0, counts: q.options.map(function () { return 0; }), others: [] };
+    forms.forEach(function (codes) {
+      var c = codes[i];
+      if (!c) return;
+      s.answered++;
+      c.p.forEach(function (p) { if (p < s.counts.length) s.counts[p]++; });
+      if (c.o) s.others.push(c.o);
+    });
+    return s;
+  });
+
+  function hasAny(codes, n, picks) {
+    var c = codes[n - 1];
+    return !!c && c.p.some(function (p) { return picks.indexOf(p) !== -1; });
+  }
+
+  // ------------------------------------------------------------- вёрстка
+  // Всё собирается в массив строк из 4 столбцов, форматирование — списками
+  // номеров строк, и пишется на лист одним вызовом.
+  var rows = [], fmt = { title: [], head: [], note: [], q: [], data: [], other: [] };
+  function add(type, a, b, c, d) {
+    rows.push([a == null ? '' : a, b == null ? '' : b, c == null ? '' : c, d == null ? '' : d]);
+    if (type) fmt[type].push(rows.length);
+  }
+  function bar(share) { return new Array(Math.round(share * 20) + 1).join('█'); }
+
+  var period = (dFrom || dTo)
+    ? (dFrom ? 'с ' + fmtDay(dFrom) + ' ' : '') + (dTo ? 'по ' + fmtDay(dTo) : '')
+    : 'за всё время';
+
+  add('title', 'Сводка: ' + K.title);
+  add('note', (klass ? 'Класс ' + klass : 'Все классы') + ' · ' + period + ' · анкет: ' + N +
+              ' · сформировано ' + fmtDay(new Date()));
+  add(null);
+
+  add('head', 'ТРЕВОЖНЫЕ ПОКАЗАТЕЛИ — доля учеников, отметивших вариант', 'Учеников', '%', '');
+  K.signals.forEach(function (sg) {
+    var c = 0;
+    forms.forEach(function (codes) { if (hasAny(codes, sg.n, sg.picks)) c++; });
+    add('data', sg.label + '  (вопрос ' + sg.n + ')', c, c / N, bar(c / N));
+  });
+  add(null);
+
+  add('head', 'ОТВЕТЫ ПО ВОПРОСАМ', 'Учеников', '%', '');
+  K.questions.forEach(function (q, i) {
+    var s = stat[i];
+    add('q', q.n + '. ' + q.stem);
+    var note = 'Ответили: ' + s.answered + ' из ' + N;
+    if (q.skipIf && s.answered < N) {
+      note += ' (остальные в вопросе ' + q.skipIf.n + ' ответили «' +
+              K.questions[q.skipIf.n - 1].options[q.skipIf.pick] + '»)';
+    }
+    if (q.multi) note += '. Можно было выбрать несколько вариантов — сумма может быть больше 100 %';
+    add('note', note);
+    q.options.forEach(function (o, k) {
+      var share = s.answered ? s.counts[k] / s.answered : 0;
+      add('data', o, s.counts[k], share, bar(share));
+    });
+    s.others.forEach(function (t) { add('other', '      «' + t + '»'); });
+    add(null);
+  });
+
+  add('note', 'Опросник анонимный: по нему делают общие выводы и намечают направления работы ' +
+              'в классе, школе и с семьями. Если высока вероятность школьного насилия, стресса, ' +
+              'страхов и унижений, рекомендуется объединить усилия родителей и педагогов и провести ' +
+              'более глубокое исследование учащихся (раздел 1.2.4 сборника).');
+
+  // ---------------------------------------------------- запись на лист
+  var name = 'Сводка · ' + (K.short || K.title) + ' · ' + (klass || 'все классы');
+  var sh = ss.getSheetByName(name);
+  if (sh) sh.clear(); else sh = ss.insertSheet(name);
+
+  sh.getRange(1, 1, rows.length, 4).setValues(rows)
+    .setVerticalAlignment('top').setFontFamily('Arial').setFontSize(10);
+  sh.setColumnWidth(1, 470);
+  sh.setColumnWidth(2, 80);
+  sh.setColumnWidth(3, 60);
+  sh.setColumnWidth(4, 170);
+  sh.getRange(1, 1, rows.length, 1).setWrap(true);
+
+  function each(list, f) { list.forEach(function (r) { f(sh.getRange(r, 1, 1, 4)); }); }
+  each(fmt.title, function (g) { g.setFontSize(14).setFontWeight('bold'); });
+  each(fmt.head,  function (g) { g.setFontWeight('bold').setFontColor('#6b7689')
+                                  .setBorder(false, false, true, false, false, false); });
+  each(fmt.q,     function (g) { g.setFontWeight('bold'); });
+  each(fmt.note,  function (g) { g.setFontColor('#6b7689').setFontStyle('italic'); });
+  each(fmt.other, function (g) { g.setFontColor('#1a2233').setFontStyle('italic'); });
+  each(fmt.data,  function (g) {
+    g.offset(0, 2, 1, 1).setNumberFormat('0%');
+    g.offset(0, 3, 1, 1).setFontColor('#3b6ef5');
+  });
+  ss.setActiveSheet(sh);
+  return name;
 }
 
 /* ========================================================== САМОПРОВЕРКА
@@ -736,4 +1432,29 @@ function testSendSample() {
   });
   Logger.log('Отправлено на ' + EMAIL + '. Итог: ' + res.total +
              ', уровень ' + res.levels.total.level);
+}
+
+/* Пробное письмо по шкале благополучия: ответы подобраны так, чтобы
+   сработал блок «Обратить внимание» (пункты 10 и 17). */
+function testWellbeingSample() {
+  var K = KEYS['blagopoluchie-riff'];
+  var L = ['а', 'б', 'в'];
+  var answers = K.items.map(function (stem, i) {
+    var p = (i + 1 === 10 || i + 1 === 17) ? 1 : (i % 3);
+    return { n: i + 1, picks: [p], letters: [L[p]], texts: [K.options[p]], stem: stem };
+  });
+  var d = {
+    testId: 'blagopoluchie-riff', fio: 'Пробный Ученик', klass: '10А',
+    school: '', date: 'проверка', duration: '3 мин'
+  };
+  var res = scoreWellbeing(K, answers);
+  MailApp.sendEmail({
+    to: EMAIL,
+    subject: 'ПРОВЕРКА · ' + KINDS.wellbeing.subject(K, d, res),
+    htmlBody: emailHtml(K, d, res),
+    body: wbPlainText(K, d, res),
+    attachments: [makePdf(K, d, res)],
+    name: 'Психодиагностика'
+  });
+  Logger.log('Отправлено на ' + EMAIL + '. Итог: ' + res.total + ', уровень ' + res.level.name);
 }

@@ -13,6 +13,21 @@
    а весь текст читается прямо с T (как раньше). Порядок и число вариантов
    в question.options должны совпадать между языками — сервер считает баллы
    по позиции варианта, а не по его тексту.
+
+   СКОЛЬКО ВАРИАНТОВ ВЫБИРАТЬ. По умолчанию — ровно T.choicesRequired в каждом
+   вопросе (один — выбор как у радиокнопки). У вопроса можно задать:
+     multi: true        — можно отметить сколько угодно, но хотя бы один;
+     exclusive: [i]     — варианты, которые не сочетаются с остальными
+                          («Не сталкивался»): выбор такого снимает прочие;
+     other: true        — последний вариант — «Свой вариант», при выборе
+                          появляется поле для текста, и без текста дальше
+                          не пустят;
+     skipIf: {n, pick}  — вопрос пропускается, если в вопросе n выбран
+                          вариант pick (на сервер уходит skipped: true).
+
+   АНОНИМНОСТЬ. При T.anonymous имя не спрашивается, на сервер уходит только
+   класс, дата без времени и случайный номер прохождения (sid) — по нему
+   сервер отличает повторную отправку той же анкеты от новой.
    ========================================================================= */
 (function () {
   'use strict';
@@ -30,12 +45,16 @@
       classLabel: 'Класс',
       schoolLabel: 'Школа', schoolPlaceholder: 'МБОУ СОШ №1',
       startBtn: 'Начать',
-      meta: function (n) { return 'Вопросов: ' + n + ' · займёт около 7–10 минут'; },
+      anonNote: 'Анкета анонимная — имя и фамилию не спрашиваем.',
+      meta: function (n, mins) { return 'Вопросов: ' + n + ' · займёт около ' + mins + ' минут'; },
       errFio: 'Напиши имя и фамилию полностью.',
       errGrade: 'Выбери цифру класса.',
       errLetter: 'Выбери букву класса.',
       counter: function (i, total) { return 'Вопрос ' + i + ' из ' + total; },
       hint: function (need) { return 'Выбери <b>ровно ' + need + '</b> варианта'; },
+      hintOne: 'Выбери <b>один</b> вариант',
+      hintMany: 'Можно выбрать <b>несколько</b> вариантов',
+      otherPlaceholder: 'Напиши свой вариант',
       back: 'Назад', next: 'Далее', finishBtn: 'Завершить',
       sendingTitle: 'Отправляем ответы…',
       sendingSub: 'Не закрывай страницу, это займёт несколько секунд.',
@@ -50,12 +69,16 @@
       classLabel: 'Сынып',
       schoolLabel: 'Мектеп', schoolPlaceholder: 'Мектеп атауы',
       startBtn: 'Бастау',
-      meta: function (n) { return 'Сұрақтар саны: ' + n + ' · шамамен 7–10 минут алады'; },
+      anonNote: 'Сауалнама жасырын — аты-жөніңді сұрамаймыз.',
+      meta: function (n, mins) { return 'Сұрақтар саны: ' + n + ' · шамамен ' + mins + ' минут алады'; },
       errFio: 'Атыңды және тегіңді толық жаз.',
       errGrade: 'Сынып санын таңда.',
       errLetter: 'Сынып әрпін таңда.',
       counter: function (i, total) { return 'Сұрақ ' + i + ' / ' + total; },
       hint: function (need) { return '<b>Дәл ' + need + '</b> жауап нұсқасын таңда'; },
+      hintOne: '<b>Бір</b> жауап нұсқасын таңда',
+      hintMany: '<b>Бірнеше</b> нұсқаны таңдауға болады',
+      otherPlaceholder: 'Өз нұсқаңды жаз',
       back: 'Артқа', next: 'Келесі', finishBtn: 'Аяқтау',
       sendingTitle: 'Жауаптар жіберілуде…',
       sendingSub: 'Бетті жаппа, бұл бірнеше секунд алады.',
@@ -72,6 +95,8 @@
     student: null,
     answers: {},        // { номер вопроса: [индексы вариантов] }
     order:   {},        // порядок выбора внутри вопроса
+    other:   {},        // { номер вопроса: текст «своего варианта» }
+    sid: null,          // номер прохождения анонимной анкеты
     idx: 0,
     startedAt: null,
     sent: false
@@ -105,9 +130,40 @@
     });
   }
   function pad(n) { return n < 10 ? '0' + n : '' + n; }
+  function day(d) {
+    return pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + '.' + d.getFullYear();
+  }
   function stamp(d) {
-    return pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + '.' + d.getFullYear() +
-           ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    return day(d) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  /* ----------------------------------------------- правила выбора ответа */
+  function rule(q) {
+    if (q.multi) return { min: 1, max: q.options.length, multi: true };
+    var n = q.choices || T.choicesRequired || 1;
+    return { min: n, max: n, multi: false };
+  }
+
+  // индекс варианта «Свой вариант» (всегда последний) или -1
+  function otherIdx(q) { return q.other ? q.options.length - 1 : -1; }
+
+  function isSkipped(q) {
+    var s = q.skipIf;
+    return !!(s && (state.answers[s.n] || []).indexOf(s.pick) !== -1);
+  }
+
+  // соседний вопрос в направлении dir, минуя пропускаемые
+  function step(from, dir) {
+    var Q = TT().questions, i = from + dir;
+    while (i >= 0 && i < Q.length && isSkipped(Q[i])) i += dir;
+    return i;
+  }
+
+  function answered(q) {
+    var sel = state.answers[q.n] || [], r = rule(q), oi = otherIdx(q);
+    if (sel.length < r.min || sel.length > r.max) return false;
+    if (oi !== -1 && sel.indexOf(oi) !== -1 && !(state.other[q.n] || '').trim()) return false;
+    return true;
   }
 
   /* Переключатель языка — рисуется первым в карточке, если методика
@@ -144,11 +200,13 @@
       '<p class="sub">' + esc(Tx.author) + ' · ' + esc(Tx.audience) + '</p>' +
       '<p class="greet">' + esc(Tx.greeting) + '</p>' +
       '<p class="instr">' + Tx.instruction + '</p>' +
-      '<p class="meta">' + Ux.meta(Tx.questions.length) + '</p>' +
+      '<p class="meta">' + Ux.meta(Tx.questions.length, T.minutes || '7–10') + '</p>' +
+      (T.anonymous ? '<p class="anon">' + esc(Ux.anonNote) + '</p>' : '') +
       '<form id="startForm" novalidate>' +
+        (T.anonymous ? '' :
         '<label>' + esc(Ux.fioLabel) + ' <span class="req">*</span>' +
           '<input name="fio" autocomplete="name" required placeholder="' + esc(Ux.fioPlaceholder) + '">' +
-        '</label>' +
+        '</label>') +
         '<div class="field">' +
           '<span class="lab">' + esc(Ux.classLabel) + ' <span class="req">*</span></span>' +
           '<div class="chips" id="grades"></div>' +
@@ -186,14 +244,19 @@
     chipRow($('#grades', wrap), grades, grades, function (v) { picked.grade = v; });
     chipRow($('#letters', wrap), letters, letters, function (v) { picked.letter = v; });
 
+    // Семь-восемь цифр (5–11) встают одной строкой, а не 6 + одинокая
+    if (grades.length > 6 && grades.length <= 8) {
+      $('#grades', wrap).style.gridTemplateColumns = 'repeat(' + grades.length + ', 1fr)';
+    }
+
     $('#startForm', wrap).addEventListener('submit', function (e) {
       e.preventDefault();
-      var fio = this.fio.value.trim().replace(/\s+/g, ' ');
+      var fio = T.anonymous ? '' : this.fio.value.trim().replace(/\s+/g, ' ');
       var err = $('#startErr', wrap);
 
       function fail(msg) { err.textContent = msg; err.hidden = false; }
 
-      if (fio.length < 3 || fio.indexOf(' ') === -1) {
+      if (!T.anonymous && (fio.length < 3 || fio.indexOf(' ') === -1)) {
         return fail(Ux.errFio);
       }
       if (picked.grade === null) return fail(Ux.errGrade);
@@ -205,7 +268,8 @@
         school: this.school ? this.school.value.trim() : ''
       };
       state.startedAt = Date.now();
-      state.idx = 0;
+      state.sid = Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+      state.idx = step(-1, 1);
       renderQuiz(root);
     });
 
@@ -219,27 +283,46 @@
   function renderQuiz(root) {
     var Tx = TT(), Ux = ui();
     var q = Tx.questions[state.idx];
-    var need = T.choicesRequired;
+    var r = rule(q);
+    var oi = otherIdx(q);
+    var prevIdx = step(state.idx, -1);
+    var isLast = step(state.idx, 1) >= Tx.questions.length;
     if (!state.answers[q.n]) { state.answers[q.n] = []; state.order[q.n] = []; }
 
     var wrap = el('section', 'card quiz');
     var pct = Math.round(state.idx / Tx.questions.length * 100);
+    var hint = r.multi ? Ux.hintMany : (r.max === 1 ? Ux.hintOne : Ux.hint(r.max));
 
     wrap.innerHTML =
       '<div class="progress"><div class="bar" style="width:' + pct + '%"></div></div>' +
       '<p class="counter">' + esc(Ux.counter(state.idx + 1, Tx.questions.length)) + '</p>' +
       '<h2 class="stem">' + esc(q.stem) + '</h2>' +
-      '<p class="hint">' + Ux.hint(need) + '</p>' +
+      '<p class="hint">' + hint + '</p>' +
       '<ul class="opts" id="opts"></ul>' +
+      (oi !== -1 ?
+        '<div class="other" id="otherBox" hidden>' +
+          '<textarea id="otherTxt" rows="3" maxlength="300" placeholder="' +
+            esc(q.otherHint || Ux.otherPlaceholder) + '"></textarea>' +
+        '</div>' : '') +
       '<div class="nav">' +
-        '<button class="btn ghost" id="prev"' + (state.idx === 0 ? ' disabled' : '') + '>' + esc(Ux.back) + '</button>' +
+        '<button class="btn ghost" id="prev"' + (prevIdx < 0 ? ' disabled' : '') + '>' + esc(Ux.back) + '</button>' +
         '<button class="btn primary" id="next">' +
-          (state.idx === Tx.questions.length - 1 ? esc(Ux.finishBtn) : esc(Ux.next)) +
+          (isLast ? esc(Ux.finishBtn) : esc(Ux.next)) +
         '</button>' +
       '</div>';
 
     var list = $('#opts', wrap);
     var nextBtn = $('#next', wrap);
+    var otherBox = $('#otherBox', wrap);
+    var otherTxt = $('#otherTxt', wrap);
+
+    if (otherTxt) {
+      otherTxt.value = state.other[q.n] || '';
+      otherTxt.addEventListener('input', function () {
+        state.other[q.n] = otherTxt.value;
+        nextBtn.disabled = !answered(q);
+      });
+    }
 
     function refresh() {
       var sel = state.answers[q.n];
@@ -248,31 +331,46 @@
         li.classList.toggle('on', on);
         li.setAttribute('aria-checked', on ? 'true' : 'false');
       });
-      nextBtn.disabled = sel.length !== need;
+      if (otherBox) otherBox.hidden = sel.indexOf(oi) === -1;
+      nextBtn.disabled = !answered(q);
+    }
+
+    function drop(x) {
+      var sel = state.answers[q.n];
+      var at = sel.indexOf(x);
+      if (at !== -1) sel.splice(at, 1);
+      state.order[q.n] = state.order[q.n].filter(function (y) { return y !== x; });
     }
 
     q.options.forEach(function (text, i) {
       var li = el('li', 'opt');
-      li.setAttribute('role', 'checkbox');
+      li.setAttribute('role', r.max === 1 ? 'radio' : 'checkbox');
       li.setAttribute('tabindex', '0');
       li.innerHTML = '<span class="mark">' + LETTERS[i] + '</span>' +
                      '<span class="txt">' + esc(text) + '</span>';
       function toggle() {
         var sel = state.answers[q.n];
-        var at = sel.indexOf(i);
-        if (at !== -1) {
-          sel.splice(at, 1);
-          state.order[q.n] = state.order[q.n].filter(function (x) { return x !== i; });
+        if (sel.indexOf(i) !== -1) {
+          if (r.max === 1) return;             // радиокнопку повторным тапом не снимаем
+          drop(i);
         } else {
-          if (sel.length >= need) {
+          if (r.multi) {
+            // «Не сталкивался» и прочие исключающие варианты не сочетаются
+            // с остальными: выбор такого варианта снимает всё прочее, а выбор
+            // обычного — снимает исключающий
+            var ex = q.exclusive || [];
+            sel.slice().forEach(function (x) {
+              if (ex.indexOf(i) !== -1 || ex.indexOf(x) !== -1) drop(x);
+            });
+          } else if (sel.length >= r.max) {
             // заменяем вариант, выбранный раньше остальных
-            var oldest = state.order[q.n].shift();
-            sel.splice(sel.indexOf(oldest), 1);
+            drop(state.order[q.n][0]);
           }
           sel.push(i);
           state.order[q.n].push(i);
         }
         refresh();
+        if (i === oi && otherTxt && sel.indexOf(oi) !== -1) otherTxt.focus();
       }
       li.addEventListener('click', toggle);
       li.addEventListener('keydown', function (e) {
@@ -282,12 +380,15 @@
     });
 
     $('#prev', wrap).addEventListener('click', function () {
-      if (state.idx > 0) { state.idx--; renderQuiz(root); }
+      if (prevIdx >= 0) { state.idx = prevIdx; renderQuiz(root); }
     });
     nextBtn.addEventListener('click', function () {
-      if (state.answers[q.n].length !== need) return;
-      if (state.idx === Tx.questions.length - 1) finish(root);
-      else { state.idx++; renderQuiz(root); }
+      if (!answered(q)) return;
+      // переход считаем заново: ответ на этот вопрос мог включить
+      // или выключить пропуск следующего
+      var nx = step(state.idx, 1);
+      if (nx >= Tx.questions.length) finish(root);
+      else { state.idx = nx; renderQuiz(root); }
     });
 
     renderLangSwitch(wrap, function () { renderQuiz(root); });
@@ -307,17 +408,29 @@
       fio:    state.student.fio,
       klass:  state.student.klass,
       school: state.student.school,
-      date:   stamp(new Date()),
+      // у анонимной анкеты — только дата: по времени отправки ученика
+      // в небольшом классе было бы нетрудно вычислить
+      date:   T.anonymous ? day(new Date()) : stamp(new Date()),
       duration: mins + ' мин',
+      lang:   state.lang || '',
+      sid:    T.anonymous ? state.sid : undefined,
       answers: Tx.questions.map(function (q) {
-        var picks = (state.answers[q.n] || []).slice().sort(function (a, b) { return a - b; });
-        return {
+        var skipped = isSkipped(q);
+        var picks = skipped ? [] :
+          (state.answers[q.n] || []).slice().sort(function (a, b) { return a - b; });
+        var a = {
           n: q.n,
           picks: picks,
           letters: picks.map(function (i) { return LETTERS[i]; }),
           texts:   picks.map(function (i) { return q.options[i]; }),
           stem:    q.stem
         };
+        if (skipped) a.skipped = true;
+        var oi = otherIdx(q);
+        if (oi !== -1 && picks.indexOf(oi) !== -1) {
+          a.other = String(state.other[q.n] || '').trim().slice(0, 300);
+        }
+        return a;
       })
     };
   }
@@ -371,7 +484,8 @@
       stage.innerHTML =
         '<div class="tick" aria-hidden="true">✓</div>' +
         '<h1 class="thanks">' + esc(Tx.finalNote) + '</h1>' +
-        '<p class="sub">' + esc(Ux.doneSub) + '</p>';
+        '<p class="sub">' + esc(Ux.doneSub) + '</p>' +
+        (Tx.finalHelp ? '<p class="help">' + esc(Tx.finalHelp) + '</p>' : '');
     }
 
     function failed(msg) {
