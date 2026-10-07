@@ -30,9 +30,9 @@
    ТРИ ВИДА МЕТОДИК (поле kind в KEYS):
      motivation — мотивация Лукьяновой: баллы по ключу, письмо с PDF;
      wellbeing  — шкала благополучия: сумма 0–36, письмо с PDF;
-     survey     — анонимная анкета без ключа: писем нет, каждый ответ —
-                  строка в таблице, а сводку по классу психолог строит
-                  сам из меню таблицы «Психодиагностика».
+     survey     — анонимная анкета без ключа: письмо с PDF-протоколом
+                  ответов без имени, строка в таблице, а сводку по классу
+                  психолог строит сам из меню таблицы «Психодиагностика».
    ========================================================================= */
 
 var EMAIL = 'ВАША_ПОЧТА@example.com';   // ← впишите сюда свой адрес
@@ -243,6 +243,7 @@ var KEYS = {
     kind:   'survey',
     title:  'Экспресс-анкетирование «Как с тобой обращаются»',
     author: 'Авторский коллектив научных сотрудников ННПИБД «Өркен»',
+    filePrefix: 'Обращение',
     sheet:  'Как с тобой обращаются',
     short:  'Обращение',
 
@@ -342,8 +343,7 @@ var KEYS = {
 };
 
 /* Что делать с ответом методики каждого вида: подсчёт, тема и тело
-   письма, текстовая версия, журнал. У анонимной анкеты (survey) писем
-   нет — только журнал. */
+   письма, текстовая версия, журнал. */
 var KINDS = {
   motivation: {
     score: score,
@@ -372,7 +372,19 @@ var KINDS = {
     }
   },
   survey: {
-    log: logSurvey
+    score: scoreSurvey,
+    body: svReportBody,
+    plain: svPlainText,
+    log: logSurvey,
+    subject: function (K, d, res) {
+      return 'Анонимная анкета · ' + (K.short || K.title) + ' · ' + d.klass + ' класс' +
+             (res.alerts.length ? ' · ⚠ обратить внимание' : '');
+    },
+    footer: function (K, res) {
+      return 'Анонимная анкета · ' + (res.alerts.length
+        ? 'есть ответы, на которые стоит обратить внимание'
+        : 'тревожных ответов нет');
+    }
   }
 };
 
@@ -390,12 +402,6 @@ function doPost(e) {
     // письмо не нужно — но ученику отвечаем «принято», иначе он увидит
     // ошибку там, где на самом деле всё в порядке.
     if (isRepeat(d)) return json({ ok: true });
-
-    // анонимная анкета: только строка в таблице, писем нет
-    if (K.kind === 'survey') {
-      kind.log(K, d);
-      return json({ ok: true });
-    }
 
     var res = kind.score(K, d.answers);
 
@@ -796,7 +802,7 @@ function studentCard(d) {
   return '<table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="' + C.soft +
     '" style="background-color:' + C.soft + ';border:1px solid ' + C.line + ';"><tr>' +
     '<td style="padding:12px 16px;"><table cellpadding="0" cellspacing="0" border="0"><tr>' +
-      item('УЧЕНИК', d.fio) +
+      item('УЧЕНИК', d.fio || 'анонимно') +
       item('КЛАСС', d.klass) +
       (d.school ? item('ШКОЛА', d.school) : '') +
       item('ДАТА', d.date) +
@@ -819,7 +825,9 @@ function answersRows(rows) {
     for (var i = 0; i < r.letters.length; i++) {
       h += '<div style="color:' + C.muted + ';padding-top:1px;">' +
              r.letters[i] + ') ' + esc(r.texts[i]) +
-             ' <span style="color:' + C.accent + ';">[' + r.values[i] + ']</span></div>';
+             (r.values[i] !== ''
+               ? ' <span style="color:' + C.accent + ';">[' + r.values[i] + ']</span>' : '') +
+             '</div>';
     }
     h += '</td>' +
       '<td width="20" valign="top" align="right" style="padding:5px 0;color:' + C.muted +
@@ -889,7 +897,9 @@ function pdfHtml(K, d, res) {
 
     h2('ОТВЕТЫ ОБУЧАЮЩЕГОСЯ') +
     '<div style="font-size:11px;color:' + C.muted + ';padding-bottom:8px;">' +
-      'В квадратных скобках — балл варианта по ключу методики.' +
+      (K.kind === 'survey'
+        ? 'Анкета анонимная, ключа у методики нет — ниже ответы как есть.'
+        : 'В квадратных скобках — балл варианта по ключу методики.') +
       (res.alerts && res.alerts.length
         ? ' Красным с «!» — ответы из блока «Обратить внимание».' : '') + '</div>' +
     answersTable(res) +
@@ -897,7 +907,8 @@ function pdfHtml(K, d, res) {
     '<div style="margin-top:22px;padding-top:10px;border-top:1px solid ' + C.line +
       ';font-size:10px;color:' + C.muted + ';">' +
       esc(K.title) + ' · ' + esc(K.author) + ' · протокол сформирован ' +
-      esc(d.date) + '. Документ содержит персональные данные обучающегося.</div>' +
+      esc(d.date) + (d.fio ? '. Документ содержит персональные данные обучающегося.'
+                           : '. Анкета анонимная.') + '</div>' +
 
     '</body></html>';
 }
@@ -914,7 +925,7 @@ function emailHtml(K, d, res) {
       '<div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:' +
         C.muted + ';">НОВЫЙ РЕЗУЛЬТАТ ТЕСТИРОВАНИЯ</div>' +
       '<div style="font-size:19px;font-weight:bold;padding:4px 0 2px 0;">' +
-        esc(d.fio) + ', ' + esc(d.klass) + ' класс</div>' +
+        (d.fio ? esc(d.fio) : 'Анонимная анкета') + ', ' + esc(d.klass) + ' класс</div>' +
       '<div style="font-size:12px;color:' + C.muted + ';padding-bottom:18px;">' +
         esc(K.title) + ' · ' + esc(K.author) + '</div>' +
 
@@ -961,7 +972,12 @@ function safeName(s) {
 }
 
 function makePdf(K, d, res) {
-  var name = K.filePrefix + '_' + safeName(d.fio) + '_' + safeName(d.klass) + '.pdf';
+  // у анонимной анкеты вместо имени — дата и хвост номера прохождения,
+  // чтобы скачанные протоколы одного класса не затирали друг друга
+  var name = d.fio
+    ? K.filePrefix + '_' + safeName(d.fio) + '_' + safeName(d.klass) + '.pdf'
+    : K.filePrefix + '_' + safeName(d.klass) + '_' + safeName(d.date) + '_' +
+      String(d.sid || '').slice(-4) + '.pdf';
   return Utilities.newBlob(pdfHtml(K, d, res), MimeType.HTML, name)
                   .getAs(MimeType.PDF).setName(name);
 }
@@ -1040,11 +1056,19 @@ function wbLevelCard(K, res) {
     '</tr></table>';
 }
 
-/* Отдельные тревожные ответы — красной полосой слева, каждый строкой */
+/* Отдельные тревожные ответы — красной полосой слева, каждый строкой.
+   Общий для шкалы благополучия и анонимной анкеты, отличается подписью. */
 function wbAlerts(K, res) {
+  return alertsBlock(res,
+    'Тревожных ответов на отдельные утверждения нет.',
+    'Блок отмечает отдельные ответы о плаче, желании уйти из дома, обесценивании жизни, ' +
+    'страшных снах, одиночестве и сильной грусти. Такие ответы стоит обсудить с учеником ' +
+    'лично, даже если общий балл средний или высокий.');
+}
+
+function alertsBlock(res, emptyText, note) {
   if (!res.alerts.length) {
-    return '<div style="font-size:12px;color:' + C.muted + ';">' +
-      'Тревожных ответов на отдельные утверждения нет.</div>';
+    return '<div style="font-size:12px;color:' + C.muted + ';">' + emptyText + '</div>';
   }
   var h = '<table width="100%" cellpadding="0" cellspacing="0" border="0" ' +
           'style="border-collapse:collapse;">';
@@ -1055,10 +1079,7 @@ function wbAlerts(K, res) {
       '<span style="color:' + C.neg + ';">ответ: «' + esc(a.answer) + '»</span></td></tr>';
   });
   h += '</table>' +
-    '<div style="font-size:11px;color:' + C.muted + ';padding-top:6px;">' +
-      'Блок отмечает отдельные ответы о плаче, желании уйти из дома, обесценивании жизни, ' +
-      'страшных снах, одиночестве и сильной грусти. Такие ответы стоит обсудить с учеником ' +
-      'лично, даже если общий балл средний или высокий.</div>';
+    '<div style="font-size:11px;color:' + C.muted + ';padding-top:6px;">' + note + '</div>';
   return h;
 }
 
@@ -1130,6 +1151,85 @@ function wbLogToSheet(K, d, res) {
                 res.alerts.map(function (a) { return a.n + ' — ' + a.short + ' (' +
                   a.answer.toLowerCase() + ')'; }).join('; '),
                 d.duration].concat(res.rows.map(function (r) { return Number(r.values[0]); })));
+}
+
+/* Протокол одной анонимной анкеты: ответы как есть (ключа нет) и блок
+   «Обратить внимание» — вопросы, где ответ попал в тревожные показатели
+   (K.signals, те же, что сверху в сводке по классу). */
+var OPT_LETTERS = 'абвгдежзиклмн';
+
+function scoreSurvey(K, answers) {
+  var res = { rows: [], alerts: [] };
+  K.questions.forEach(function (q, i) {
+    var a = answers[i];
+    var row = { n: q.n, block: '', stem: q.stem, letters: [], texts: [], values: [] };
+
+    if (a.skipped) {
+      row.letters.push('—');
+      row.texts.push('вопрос пропущен: в вопросе ' + q.skipIf.n + ' ответ «' +
+                     K.questions[q.skipIf.n - 1].options[q.skipIf.pick] + '»');
+      row.values.push('');
+    } else {
+      a.picks.forEach(function (p) {
+        row.letters.push(OPT_LETTERS.charAt(p));
+        row.texts.push(q.other && p === q.options.length - 1
+          ? q.options[p] + ': «' + a.other + '»' : q.options[p]);
+        row.values.push('');
+      });
+
+      // все тревожные варианты этого вопроса, которые ученик отметил
+      var hit = [];
+      K.signals.forEach(function (sg) {
+        if (sg.n !== q.n) return;
+        sg.picks.forEach(function (p) {
+          if (a.picks.indexOf(p) !== -1 && hit.indexOf(p) === -1) hit.push(p);
+        });
+      });
+      if (hit.length) {
+        hit.sort(function (x, y) { return x - y; });
+        res.alerts.push({ n: q.n, stem: q.stem,
+          answer: hit.map(function (p) { return q.options[p]; }).join('», «') });
+        row.alert = true;
+      }
+    }
+    res.rows.push(row);
+  });
+  return res;
+}
+
+function svReportBody(K, d, res) {
+  return studentCard(d) +
+    h2('ОБРАТИТЬ ВНИМАНИЕ') +
+    alertsBlock(res,
+      'Ответов из списка тревожных показателей нет.',
+      'Отмечены ответы из списка тревожных показателей: плохие отношения с родителями, ' +
+      'физическое наказание, незащищённость в семье, травля в соцсетях, насилие в школе. ' +
+      'Анкета анонимная — ученика по ней не установить; такие ответы показывают, ' +
+      'на что обратить внимание в классе.') +
+    h2('ОТВЕТЫ') +
+    answersTable(res);
+}
+
+function svPlainText(K, d, res) {
+  var L = [];
+  L.push(K.title + ' — ' + K.author);
+  L.push('');
+  L.push('Анонимная анкета, ' + d.klass + ' класс, ' + d.date);
+  L.push('');
+  if (res.alerts.length) {
+    L.push('ОБРАТИТЬ ВНИМАНИЕ:');
+    res.alerts.forEach(function (a) { L.push('  ' + a.n + '. ' + a.stem + ' — «' + a.answer + '»'); });
+  } else {
+    L.push('Ответов из списка тревожных показателей нет.');
+  }
+  L.push('');
+  res.rows.forEach(function (r) {
+    L.push(r.n + '. ' + r.stem);
+    r.texts.forEach(function (t, i) { L.push('   ' + r.letters[i] + ') ' + t); });
+  });
+  L.push('');
+  L.push('Протокол — в PDF во вложении.');
+  return L.join('\n');
 }
 
 /* ==================================================== АНОНИМНАЯ АНКЕТА
