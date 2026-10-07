@@ -237,8 +237,9 @@
       });
     }
 
-    // наборы задаются в data.js — у другой методики они могут быть иными
-    var grades = T.grades || [6, 7, 8, 9, 10, 11];
+    // наборы задаются в data.js; по умолчанию — 10–11 класс: школа проводит
+    // все методики только в старших классах
+    var grades = T.grades || [10, 11];
     var letters = T.letters || ['А', 'Б', 'В', 'Г', 'Д', 'Е'];
 
     chipRow($('#grades', wrap), grades, grades, function (v) { picked.grade = v; });
