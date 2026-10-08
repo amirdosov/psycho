@@ -38,11 +38,6 @@
 var EMAIL = 'ВАША_ПОЧТА@example.com';   // ← впишите сюда свой адрес
 var SHEET = 'Результаты';             // лист-журнал мотивации (у других методик свой)
 
-/* Предел писем в сутки: не даёт потоку выдуманных заявок съесть суточную
-   квоту Gmail (около 100 писем). Сверх предела заявки продолжают попадать
-   в таблицу, но письма не уходят — настоящие результаты не теряются. */
-var MAX_EMAILS_PER_DAY = 60;
-
 /* ============================================================== ПАЛИТРА */
 var C = {
   ink:    '#1a2233',
@@ -405,19 +400,25 @@ function doPost(e) {
 
     var res = kind.score(K, d.answers);
 
-    // Сначала журнал, потом почта: если письма упрутся в суточный предел,
+    // Сначала журнал, потом почта: если письма упрутся в суточную квоту,
     // результат всё равно не пропадёт.
     kind.log(K, d, res);
 
-    if (mailQuotaLeft()) {
-      MailApp.sendEmail({
-        to: EMAIL,
-        subject: kind.subject(K, d, res),
-        htmlBody: emailHtml(K, d, res),
-        body: kind.plain(K, d, res),
-        attachments: [makePdf(K, d, res)],
-        name: 'Психодиагностика'
-      });
+    // Сбой почты — не ошибка ученика: строка уже в таблице, поэтому
+    // отвечаем «принято», а не просим отправить ещё раз.
+    try {
+      if (mailQuotaLeft()) {
+        MailApp.sendEmail({
+          to: EMAIL,
+          subject: kind.subject(K, d, res),
+          htmlBody: emailHtml(K, d, res),
+          body: kind.plain(K, d, res),
+          attachments: [makePdf(K, d, res)],
+          name: 'Психодиагностика'
+        });
+      }
+    } catch (mailErr) {
+      console.error('Письмо не ушло: ' + mailErr);
     }
     return json({ ok: true });
 
@@ -529,15 +530,14 @@ function isRepeat(d) {
   return false;
 }
 
-/* Остался ли запас писем на сегодня. */
+/* Остался ли запас писем на сегодня — по настоящей квоте Google
+   (около 100 писем в сутки у обычного аккаунта). Свой счётчик с пределом 60
+   был здесь раньше и 2026-10-08 отрезал письма целой школе, хотя квота
+   Google была почти не тронута. Сверх квоты заявки по-прежнему попадают
+   в таблицу, просто без письма. */
 function mailQuotaLeft() {
   try {
-    var props = PropertiesService.getScriptProperties();
-    var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
-    var parts = String(props.getProperty('mailCount') || '').split('|');
-    var count = (parts[0] === today) ? (parseInt(parts[1], 10) || 0) : 0;
-    if (count >= MAX_EMAILS_PER_DAY) return false;
-    props.setProperty('mailCount', today + '|' + (count + 1));
+    return MailApp.getRemainingDailyQuota() > 0;
   } catch (ignored) {}
   return true;
 }
@@ -1557,4 +1557,18 @@ function testWellbeingSample() {
     name: 'Психодиагностика'
   });
   Logger.log('Отправлено на ' + EMAIL + '. Итог: ' + res.total + ', уровень ' + res.level.name);
+}
+
+/* Проверка почты одним кликом: выберите в списке функций diagnoseMail,
+   нажмите «Выполнить» и посмотрите «Журнал выполнения». Ничего не меняет
+   и писем не отправляет — только показывает, почему письма могли не уйти. */
+function diagnoseMail() {
+  Logger.log('Получатель: ' + EMAIL);
+  Logger.log('Остаток суточной квоты Google: ' + MailApp.getRemainingDailyQuota() +
+    (MailApp.getRemainingDailyQuota() === 0 ? '  ← КВОТА GOOGLE ИСЧЕРПАНА' : ''));
+  SpreadsheetApp.getActiveSpreadsheet().getSheets().forEach(function (sh) {
+    var n = sh.getLastRow();
+    Logger.log('Лист «' + sh.getName() + '»: строк ' + Math.max(n - 1, 0) +
+      (n > 1 ? ', последняя запись: ' + sh.getRange(n, 1).getDisplayValue() : ''));
+  });
 }
