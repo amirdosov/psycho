@@ -1572,3 +1572,100 @@ function diagnoseMail() {
       (n > 1 ? ', последняя запись: ' + sh.getRange(n, 1).getDisplayValue() : ''));
   });
 }
+
+/* ========================================== ДОСЛАТЬ ПРОТОКОЛЫ ЗА ДЕНЬ
+   Если письма за какой-то день не ушли (квота, сбой почты), протоколы
+   можно восстановить из таблицы. Выберите в списке функций resendDay
+   и нажмите «Выполнить». Придёт по одному письму на методику: в нём
+   список всех учеников за день и PDF-протокол каждого во вложении.
+
+   Писем одно-два, а не по одному на ученика: квота Google считает письма,
+   а не вложения. Какие из протоколов уже приходили, восстановить нельзя —
+   анонимные анкеты лежат на листе вперемешку и без времени, — поэтому
+   в письмо попадают ВСЕ протоколы дня, часть из них будет повтором.
+
+   День — сегодняшний. Для другого дня впишите его в RESEND_DAY,
+   например '07.10.2026'.
+   ====================================================================== */
+var RESEND_DAY = '';
+
+function resendDay() {
+  var day = RESEND_DAY ||
+    Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd.MM.yyyy');
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sent = 0;
+
+  Object.keys(KEYS).forEach(function (testId) {
+    var K = KEYS[testId];
+    var sh = ss.getSheetByName(K.sheet || SHEET);
+    if (!sh || sh.getLastRow() < 2) return;
+    var shown = sh.getDataRange().getDisplayValues();
+    var raw = sh.getDataRange().getValues();
+
+    var items = [];
+    for (var r = 1; r < shown.length; r++) {
+      if (String(shown[r][0]).indexOf(day) !== 0) continue;
+      var it = K.kind === 'wellbeing' ? wbFromRow(K, testId, shown[0], shown[r])
+             : K.kind === 'survey'    ? svFromRow(K, testId, shown[0], shown[r], raw[r], items.length + 1)
+             : null;
+      if (it) items.push(it);
+      else if (K.kind === 'motivation') {
+        Logger.log('Лист «' + sh.getName() + '», строка ' + (r + 1) + ': по анкете мотивации ' +
+          'в таблице только итоговые баллы, протокол из них не собрать — пропущено.');
+      }
+    }
+    if (!items.length) return;
+
+    var kind = KINDS[K.kind];
+    var list = items.map(function (it, i) {
+      var who = it.d.fio ? it.d.fio + ', ' + it.d.klass : 'анкета ' + (i + 1) + ', ' + it.d.klass;
+      return '<li style="padding:2px 0;">' + esc(who) + ' — ' + esc(kind.footer(K, it.res)) + '</li>';
+    }).join('');
+
+    MailApp.sendEmail({
+      to: EMAIL,
+      subject: 'Протоколы за ' + day + ' · ' + (K.short || K.title) + ' · ' + items.length + ' шт.',
+      htmlBody: '<div style="font-family:Arial,Helvetica,sans-serif;color:' + C.ink + ';">' +
+        '<p>Протоколы, которые ' + day + ' не дошли письмами по одному. ' +
+        'Здесь все анкеты этого дня по методике «' + esc(K.title) + '», ' +
+        'поэтому часть из них может повторять уже полученные письма.</p>' +
+        '<ol style="font-size:13px;">' + list + '</ol>' +
+        '<p style="font-size:12px;color:' + C.muted + ';">📎 PDF каждого протокола — во вложении.</p></div>',
+      attachments: items.map(function (it) { return makePdf(K, it.d, it.res); }),
+      name: 'Психодиагностика'
+    });
+    sent++;
+    Logger.log('«' + K.title + '»: отправлено одним письмом, протоколов ' + items.length);
+  });
+
+  Logger.log(sent ? 'Готово, писем отправлено: ' + sent + ', получатель ' + EMAIL
+                  : 'За ' + day + ' анкет в таблице не найдено.');
+}
+
+/* Строка листа «Благополучие» → данные анкеты. В таблице хранится балл
+   за утверждение, а вариант ответа из него восстанавливается однозначно:
+   у прямого пункта балл 2-1-0, у обратного 0-1-2. */
+function wbFromRow(K, testId, head, row) {
+  var L = ['а', 'б', 'в'];
+  var first = head.indexOf('1');
+  var answers = K.items.map(function (stem, i) {
+    var p = Number(row[first + i]);
+    var pick = K.positive.indexOf(i + 1) !== -1 ? 2 - p : p;
+    return { n: i + 1, picks: [pick], letters: [L[pick]] };
+  });
+  var d = { testId: testId, fio: row[1], klass: row[2], school: row[3],
+            date: row[0], duration: row[7] };
+  return { d: d, res: scoreWellbeing(K, answers) };
+}
+
+/* Строка анонимной анкеты → данные анкеты, по столбцу с кодами ответов. */
+function svFromRow(K, testId, head, row, rawRow, no) {
+  var codes;
+  try { codes = JSON.parse(rawRow[head.indexOf(CODES_HEAD)]); } catch (ignored) { return null; }
+  var answers = codes.map(function (c) {
+    return c ? { picks: c.p, other: c.o || '' } : { skipped: true, picks: [] };
+  });
+  var d = { testId: testId, fio: '', klass: row[1], school: '', date: row[0],
+            duration: row[3], sid: '000' + no };
+  return { d: d, res: scoreSurvey(K, answers) };
+}
