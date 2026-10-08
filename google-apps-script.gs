@@ -400,25 +400,16 @@ function doPost(e) {
 
     var res = kind.score(K, d.answers);
 
-    // Сначала журнал, потом почта: если письма упрутся в суточную квоту,
-    // результат всё равно не пропадёт.
     kind.log(K, d, res);
 
-    // Сбой почты — не ошибка ученика: строка уже в таблице, поэтому
+    // Письма по одному больше не шлются: анкета встаёт в очередь, и раз
+    // в сутки dailyDigest присылает всё накопившееся одним письмом с архивом.
+    // Сбой очереди — не ошибка ученика: строка уже в таблице, поэтому
     // отвечаем «принято», а не просим отправить ещё раз.
     try {
-      if (mailQuotaLeft()) {
-        MailApp.sendEmail({
-          to: EMAIL,
-          subject: kind.subject(K, d, res),
-          htmlBody: emailHtml(K, d, res),
-          body: kind.plain(K, d, res),
-          attachments: [makePdf(K, d, res)],
-          name: 'Психодиагностика'
-        });
-      }
-    } catch (mailErr) {
-      console.error('Письмо не ушло: ' + mailErr);
+      enqueue(d);
+    } catch (qErr) {
+      console.error('Анкета не попала в очередь писем: ' + qErr);
     }
     return json({ ok: true });
 
@@ -1301,6 +1292,8 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Психодиагностика')
     .addItem('Сводка «Как с тобой обращаются»…', 'summaryKakSToboy')
+    .addSeparator()
+    .addItem('Отправить накопившиеся протоколы сейчас', 'sendNowFromMenu')
     .addToUi();
 }
 
@@ -1571,6 +1564,155 @@ function diagnoseMail() {
     Logger.log('Лист «' + sh.getName() + '»: строк ' + Math.max(n - 1, 0) +
       (n > 1 ? ', последняя запись: ' + sh.getRange(n, 1).getDisplayValue() : ''));
   });
+}
+
+/* ===================================== ОЧЕРЕДЬ И ПИСЬМО РАЗ В СУТКИ
+   Каждая анкета встаёт в очередь — скрытый лист «Очередь писем».
+   Раз в сутки, в DIGEST_HOUR по времени скрипта (Asia/Qyzylorda),
+   dailyDigest присылает всё накопившееся ОДНИМ письмом: в письме список
+   учеников с уровнями и тревожными ответами, во вложении ZIP-архив
+   с PDF-протоколом каждого. После отправки очередь очищается.
+   Квота Google считает письма, а не вложения, поэтому учеников может
+   быть сколько угодно.
+
+   Включить один раз: выберите в списке функций setupDailyDigest
+   и нажмите «Выполнить». Отправить очередь прямо сейчас, не дожидаясь
+   вечера: функция sendNow или меню таблицы «Психодиагностика».
+   ====================================================================== */
+var DIGEST_HOUR = 20;
+var QUEUE_SHEET = 'Очередь писем';
+var DIGEST_MAX = 150;   // протоколов в одном письме: PDF собирается 1–2 с,
+                        // а скрипту дают не больше 6 минут на запуск
+
+function enqueue(d) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) return;
+  var sh = ss.getSheetByName(QUEUE_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(QUEUE_SHEET);
+    sh.appendRow(['Данные анкеты (служебный лист, не править — очищается после письма)']);
+    sh.hideSheet();
+  }
+  sh.appendRow([JSON.stringify(d)]);
+}
+
+function setupDailyDigest() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'dailyDigest') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('dailyDigest').timeBased().everyDays(1).atHour(DIGEST_HOUR).create();
+  Logger.log('Готово: письмо с протоколами будет приходить каждый день около ' +
+    DIGEST_HOUR + ':00 (' + Session.getScriptTimeZone() + ') на ' + EMAIL);
+}
+
+function dailyDigest() { sendQueue(); }
+
+/* Ручная отправка: всё, что накопилось в очереди, — прямо сейчас. */
+function sendNow() {
+  var n = sendQueue();
+  Logger.log(n ? 'Отправлено одним письмом, протоколов: ' + n + ', получатель ' + EMAIL
+               : 'Очередь пуста — отправлять нечего.');
+  return n;
+}
+
+function sendNowFromMenu() {
+  var n = sendNow();
+  SpreadsheetApp.getUi().alert(n ? 'Отправлено одним письмом, протоколов: ' + n
+                                 : 'Новых анкет нет — отправлять нечего.');
+}
+
+/* Собирает письмо из очереди и очищает её. Возвращает число протоколов. */
+function sendQueue() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(QUEUE_SHEET);
+  if (!sh || sh.getLastRow() < 2) return 0;
+
+  // замок — чтобы ручная отправка и вечерняя не ушли одновременно
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var total = sh.getLastRow() - 1;
+    var take = Math.min(total, DIGEST_MAX);
+    var rows = sh.getRange(2, 1, take, 1).getValues();
+
+    var items = [], broken = 0;
+    rows.forEach(function (r) {
+      try {
+        var d = JSON.parse(r[0]);
+        var K = KEYS[d.testId];
+        items.push({ K: K, d: d, res: KINDS[K.kind].score(K, d.answers) });
+      } catch (err) { broken++; }
+    });
+
+    // анонимные анкеты — в случайном порядке, иначе порядок в письме
+    // повторял бы порядок сдачи и подсказывал, чья анкета
+    var named = items.filter(function (it) { return it.d.fio; });
+    var anon = items.filter(function (it) { return !it.d.fio; });
+    for (var i = anon.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1)), t = anon[i];
+      anon[i] = anon[j]; anon[j] = t;
+    }
+    items = named.concat(anon);
+
+    var used = {};
+    var pdfs = items.map(function (it) {
+      var pdf = makePdf(it.K, it.d, it.res);
+      var name = pdf.getName(), k = 2;
+      while (used[name]) name = pdf.getName().replace(/\.pdf$/, '_' + (k++) + '.pdf');
+      used[name] = true;
+      return pdf.setName(name);
+    });
+
+    var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd.MM.yyyy');
+    var alerts = items.filter(function (it) { return it.res.alerts && it.res.alerts.length; }).length;
+    var mail = {
+      to: EMAIL,
+      subject: 'Протоколы за ' + stamp + ' · анкет: ' + items.length +
+               (alerts ? ' · ⚠ обратить внимание: ' + alerts : ''),
+      htmlBody: digestHtml(items, total - take, broken),
+      name: 'Психодиагностика'
+    };
+    if (pdfs.length) {
+      mail.attachments = [Utilities.zip(pdfs,
+        'Протоколы_' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd_HH-mm') + '.zip')];
+    }
+    MailApp.sendEmail(mail);
+
+    // удаляем только отправленное: анкеты, пришедшие за время сборки,
+    // легли ниже и уйдут следующим письмом
+    sh.deleteRows(2, take);
+    return items.length;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function digestHtml(items, left, broken) {
+  var html = '<div style="font-family:Arial,Helvetica,sans-serif;color:' + C.ink + ';font-size:13px;">';
+  Object.keys(KEYS).forEach(function (testId) {
+    var K = KEYS[testId], kind = KINDS[K.kind];
+    var mine = items.filter(function (it) { return it.K === K; });
+    if (!mine.length) return;
+    html += '<div style="font-size:15px;font-weight:bold;padding:14px 0 4px 0;">' +
+      esc(K.title) + ' — ' + mine.length + '</div><ol style="margin:0;padding-left:22px;">';
+    mine.forEach(function (it, i) {
+      var who = it.d.fio ? it.d.fio + ', ' + it.d.klass : 'анкета ' + (i + 1) + ', ' + it.d.klass;
+      html += '<li style="padding:2px 0;">' + esc(who) + ' — ' + esc(kind.footer(K, it.res));
+      if (it.res.alerts && it.res.alerts.length) {
+        html += '<div style="color:' + C.neg + ';">⚠ ' + it.res.alerts.map(function (a) {
+          return esc(a.n + '. ' + (a.short || a.stem) + ' — «' + a.answer + '»');
+        }).join('<br>⚠ ') + '</div>';
+      }
+      html += '</li>';
+    });
+    html += '</ol>';
+  });
+  if (left) html += '<p style="color:' + C.neg + ';">Ещё анкет в очереди: ' + left +
+    ' — придут следующим письмом (или запустите отправку ещё раз).</p>';
+  if (broken) html += '<p style="color:' + C.neg + ';">Не удалось разобрать записей очереди: ' +
+    broken + '. Ответы этих учеников есть в таблице.</p>';
+  return html + '<p style="font-size:12px;color:' + C.muted + ';">📎 PDF-протоколы — ' +
+    'в ZIP-архиве во вложении.</p></div>';
 }
 
 /* ========================================== ДОСЛАТЬ ПРОТОКОЛЫ ЗА ДЕНЬ
